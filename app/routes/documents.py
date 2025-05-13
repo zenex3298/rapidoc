@@ -54,10 +54,10 @@ async def upload_document(
     
     try:
         # Validate document type
-        valid_doc_types = ["repo"]  # Only repo is allowed
+        valid_doc_types = ["repo", "template", "legal", "real_estate", "contract", "lease", "other"]  # Accept multiple document types
         if doc_type not in valid_doc_types:
             logger.warning(f"Invalid document type: {doc_type}")
-            raise HTTPException(status_code=400, detail=f"Invalid document type. Must be: {valid_doc_types[0]}")
+            raise HTTPException(status_code=400, detail=f"Invalid document type. Must be one of: {', '.join(valid_doc_types)}")
         
         # Validate file extension
         allowed_extensions = [".pdf", ".docx", ".doc", ".csv", ".xlsx", ".xls", ".txt", ".json"]
