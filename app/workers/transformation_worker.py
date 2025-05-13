@@ -32,12 +32,22 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Get Redis URL from environment
-REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+# Get Redis URL from environment - check both REDIS_URL and REDIS (Heroku often uses the latter)
+REDIS_URL = os.getenv('REDIS_URL') or os.getenv('REDIS') or 'redis://localhost:6379/0'
 POLL_INTERVAL = int(os.getenv('TRANSFORMATION_POLL_INTERVAL', '5'))  # seconds
 
-# Initialize Redis client
-redis_client = redis.from_url(REDIS_URL)
+# Log Redis connection info (masking credentials)
+if '@' in REDIS_URL:
+    logger.info(f"Worker using Redis URL: {REDIS_URL.split('@')[0]}[...]{REDIS_URL.split('@')[1].split('/')[0]}")
+else:
+    logger.info(f"Worker using Redis URL: {REDIS_URL}")
+
+# Initialize Redis client with retry mechanism
+try:
+    redis_client = redis.from_url(REDIS_URL)
+except Exception as e:
+    logger.error(f"Error initializing Redis client: {e}")
+    redis_client = None  # Will be retried in the main loop
 
 # Flag to track if the worker should shut down
 should_shutdown = False
@@ -275,6 +285,10 @@ def update_job_status(job_id: str, status: str, result: Optional[Dict[str, Any]]
         result: The result data (for completed jobs) or error information
     """
     try:
+        if redis_client is None:
+            logger.warning(f"Cannot update job {job_id} status to {status}: Redis not available")
+            return
+            
         job_key = f"transform_job:{job_id}"
         
         # Get current job data
@@ -302,6 +316,8 @@ def update_job_status(job_id: str, status: str, result: Optional[Dict[str, Any]]
             
         logger.info(f"Updated job {job_id} status to {status}")
         
+    except redis.exceptions.ConnectionError as e:
+        logger.warning(f"Redis connection lost while updating job {job_id}: {e}")
     except Exception as e:
         logger.error(f"Error updating job status: {e}")
 
@@ -309,27 +325,65 @@ def poll_for_jobs():
     """
     Poll the Redis queue for transformation jobs
     """
+    global redis_client
+    
     logger.info("Starting transformation worker...")
-    logger.info(f"Connected to Redis at {REDIS_URL}")
     logger.info(f"Polling interval: {POLL_INTERVAL} seconds")
     
     # Set up signal handlers for graceful shutdown
     signal.signal(signal.SIGTERM, handle_shutdown)
     signal.signal(signal.SIGINT, handle_shutdown)
     
+    # Wait for Redis to become available (important during Heroku addon provisioning)
+    retry_count = 0
+    max_retries = 30  # Wait up to 5 minutes (30 x 10 seconds)
+    
     while not should_shutdown:
+        # If Redis client isn't connected, try to connect
+        if redis_client is None:
+            try:
+                # Try to get updated Redis URL (in case it changed during provisioning)
+                updated_redis_url = os.getenv('REDIS_URL') or os.getenv('REDIS') or REDIS_URL
+                logger.info(f"Attempting to connect to Redis at {updated_redis_url.split('@')[0]}[...]")
+                redis_client = redis.from_url(updated_redis_url)
+                logger.info("Successfully connected to Redis")
+                retry_count = 0  # Reset retry count on successful connection
+            except Exception as e:
+                retry_count += 1
+                wait_time = POLL_INTERVAL * 2
+                logger.warning(f"Redis connection attempt {retry_count}/{max_retries} failed: {e}")
+                
+                if retry_count > max_retries:
+                    logger.error("Maximum Redis connection retries exceeded, will continue retrying with longer intervals")
+                    wait_time = 60  # Wait longer between retries after max_retries
+                    retry_count = max_retries  # Prevent overflow
+                
+                time.sleep(wait_time)
+                continue  # Skip to next iteration
+        
         try:
             # Try to get a job from the queue
-            job_data_raw = redis_client.rpop("transform_jobs")
-            
-            if job_data_raw:
-                # Process the job
-                job_data = json.loads(job_data_raw)
-                process_transformation_job(job_data)
+            if redis_client:
+                job_data_raw = redis_client.rpop("transform_jobs")
+                
+                if job_data_raw:
+                    # Process the job
+                    job_data = json.loads(job_data_raw)
+                    process_transformation_job(job_data)
+                else:
+                    # No jobs in the queue, sleep for a while
+                    time.sleep(POLL_INTERVAL)
             else:
-                # No jobs in the queue, sleep for a while
+                # Redis client is not available, retry connecting
+                logger.warning("Redis client not available, will retry connecting")
+                redis_client = None
                 time.sleep(POLL_INTERVAL)
         
+        except redis.exceptions.ConnectionError as e:
+            # Handle Redis connection errors (common during provisioning)
+            logger.warning(f"Redis connection lost: {e}")
+            redis_client = None
+            time.sleep(POLL_INTERVAL)
         except Exception as e:
             logger.error(f"Error in job polling: {e}")
             logger.error(traceback.format_exc())
