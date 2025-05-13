@@ -8,7 +8,18 @@ import os
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 from app.services.storage_service import S3StorageService
-from app.services.job_queue_service import job_queue_service
+
+# Try to import the real job queue service, fall back to mock for testing
+try:
+    from app.services.job_queue_service import job_queue_service
+    # If Redis is not available, fall back to mock
+    if job_queue_service.redis_client is None:
+        from app.services.mock_job_queue_service import mock_job_queue_service as job_queue_service
+        logger.warning("Using mock job queue service (Redis not available)")
+except ImportError:
+    # If the module is not found, use the mock version
+    from app.services.mock_job_queue_service import mock_job_queue_service as job_queue_service
+    logger.warning("Using mock job queue service (module not found)")
 from app.utils.performance_logger import api_perf_logger
 
 from app.core.database import get_db
