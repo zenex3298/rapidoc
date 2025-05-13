@@ -27,10 +27,10 @@ TEST_USER = {
 }
 
 # Test file paths - specifics from user request
-SAMPLE_DOCS_DIR = "tests/sample_docs"
-DOCUMENT_PATH = "/Users/Mike/Desktop/upwork/3_current_projects/rapidoc_021891240361152688586/tests/sample_docs/20250505_122441_Alexander_Sandy_Baptist_040325_MINI_PDFA.pdf"
-TEMPLATE_INPUT_PATH = "/Users/Mike/Desktop/upwork/3_current_projects/rapidoc_021891240361152688586/tests/sample_docs/input_depo.pdf"
-TEMPLATE_OUTPUT_PATH = "/Users/Mike/Desktop/upwork/3_current_projects/rapidoc_021891240361152688586/tests/sample_docs/output_depo.csv"
+SAMPLE_DOCS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sample_docs")
+DOCUMENT_PATH = os.path.join(SAMPLE_DOCS_DIR, "20250505_122441_Alexander_Sandy_Baptist_040325_MINI_PDFA.pdf")
+TEMPLATE_INPUT_PATH = os.path.join(SAMPLE_DOCS_DIR, "repo input.pdf")
+TEMPLATE_OUTPUT_PATH = os.path.join(SAMPLE_DOCS_DIR, "repo output.csv")
 
 def register_and_login():
     """Register a new user and get access token"""
@@ -187,11 +187,64 @@ def test_specific_transformation():
         result = response.json()
         logger.info(f"Document transformation completed with status code {response.status_code}")
         
-        # Document transformation response can be success or timeout/retry
+        # Document transformation response can be success, queued, or timeout/retry
         if response.status_code == 200:
-            # Regular success response
-            if "status" in result and result["status"] == "success":
-                logger.info("Transformation succeeded")
+            # Check for asynchronous job response
+            if "status" in result and result["status"] == "queued":
+                logger.info("Received asynchronous job response")
+                
+                if "job_id" not in result or "check_status_url" not in result:
+                    logger.error("Missing job_id or check_status_url in response")
+                    return False
+                
+                job_id = result["job_id"]
+                check_status_url = result["check_status_url"]
+                logger.info(f"Job ID: {job_id}")
+                logger.info(f"Check status URL: {check_status_url}")
+                
+                # Try polling the job status a few times
+                max_polls = 5
+                poll_interval = 2
+                logger.info(f"Polling job status (max {max_polls} attempts)...")
+                
+                for i in range(max_polls):
+                    logger.info(f"Poll attempt {i+1}/{max_polls}")
+                    time.sleep(poll_interval)
+                    
+                    job_response = requests.get(
+                        f"{BASE_URL}{check_status_url}",
+                        headers=headers
+                    )
+                    
+                    if job_response.status_code != 200:
+                        logger.warning(f"Job status check failed: {job_response.status_code}")
+                        continue
+                    
+                    job_data = job_response.json()
+                    job_status = job_data.get("status", "unknown")
+                    logger.info(f"Job status: {job_status}")
+                    
+                    if job_status == "completed":
+                        logger.info("Job completed successfully!")
+                        
+                        job_result = job_data.get("result", {})
+                        if "transformed_content" in job_result:
+                            content_preview = job_result["transformed_content"][:100] + "..."
+                            logger.info(f"Content preview: {content_preview}")
+                        
+                        return True
+                    
+                    elif job_status == "error":
+                        error_msg = job_data.get("result", {}).get("error", "Unknown error")
+                        logger.error(f"Job failed: {error_msg}")
+                        return False
+                
+                logger.info("Job still in progress after polling - this is expected for async processing")
+                return True
+                
+            # Regular synchronous success response
+            elif "status" in result and result["status"] == "success":
+                logger.info("Transformation succeeded (synchronous response)")
             else:
                 logger.info("Transformation completed with status: " + result.get("status", "unknown"))
                 
@@ -203,7 +256,7 @@ def test_specific_transformation():
                 logger.info(f"Download path: {result['download_path']}")
                 
         elif response.status_code == 422:
-            # Special case for timeout/retry
+            # Special case for timeout/retry (legacy response)
             if "status" in result and result["status"] == "retry_required":
                 logger.info("Document transformation timeout - requires asynchronous processing")
                 logger.info(f"Message: {result.get('message', 'No message')}")

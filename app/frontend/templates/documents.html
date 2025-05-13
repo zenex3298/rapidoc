@@ -469,83 +469,45 @@ async function transformDocument(documentId) {
             const result = await response.json();
             debugLog('Transform result', result);
             
+            // Check if this is a job response (async) or direct result
+            if (result.status === 'queued') {
+                // This is an async job response, set up polling
+                debugLog('Received job response with status: queued');
+                const jobId = result.job_id;
+                const checkStatusUrl = result.check_status_url;
+                
+                // Update the UI to show job is queued and being processed
+                resultsContent.innerHTML = `
+                    <div class="alert alert-info">
+                        <strong>Transformation Job Queued</strong>
+                        <div class="progress mt-2">
+                            <div id="job-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" 
+                                 role="progressbar" style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+                        </div>
+                        <p class="mt-2" id="job-status-message">Your document is being processed in the background. This may take a few moments...</p>
+                        <p><small>Job ID: ${jobId}</small></p>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <strong>Input Document:</strong> ${result.document_title}
+                    </div>
+                    <div class="mb-3">
+                        <strong>Input Template:</strong> ${result.template_input_title}
+                    </div>
+                    <div class="mb-3">
+                        <strong>Output Template:</strong> ${result.template_output_title}
+                    </div>
+                `;
+                
+                // Start polling for job status
+                await pollJobStatus(jobId, token, resultsContent, transformButton);
+                return;
+            }
+            
+            // If we get here, this is a direct result (either from mock service or legacy API)
             // Display the results
-            debugLog('Displaying results');
-            resultsContent.innerHTML = `
-                <div class="alert alert-success">
-                    <strong>Transformation Complete!</strong>
-                </div>
-                
-                <div class="mb-3">
-                    <strong>Input Document:</strong> ${result.document_title}
-                </div>
-                <div class="mb-3">
-                    <strong>Input Template:</strong> ${result.template_input_title}
-                </div>
-                <div class="mb-3">
-                    <strong>Output Template:</strong> ${result.template_output_title}
-                </div>
-                <div class="mb-3">
-                    <strong>Timestamp:</strong> ${new Date(result.timestamp).toLocaleString()}
-                </div>
-                
-                <h5 class="mt-4">Transformed Content:</h5>
-                <div class="card mb-3">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <span>Transformed Document</span>
-                        <div>
-                            <span class="badge bg-primary">${result.file_type || result.formats.output.replace('.','')}</span>
-                        </div>
-                    </div>
-                    <div class="card-body p-0">
-                        <pre class="bg-light p-3 m-0 border-0 rounded-0" style="max-height: 400px; overflow-y: auto; white-space: pre-wrap;">${result.transformed_content}</pre>
-                    </div>
-                    ${result.parse_error ? 
-                        `<div class="card-footer bg-warning text-dark">
-                            <small><strong>Warning:</strong> ${result.parse_error}</small>
-                         </div>` : ''}
-                </div>
-                
-                ${result.truncation_info && Object.keys(result.truncation_info).length > 0 ? 
-                    `<div class="alert alert-info">
-                        <strong>Document Truncation:</strong> Some content was truncated during processing.
-                        <button class="btn btn-sm btn-outline-info float-end" type="button" data-bs-toggle="collapse" data-bs-target="#truncationDetails">
-                            Details
-                        </button>
-                        <div class="collapse mt-2" id="truncationDetails">
-                            <div class="card card-body">
-                                <ul class="list-unstyled mb-0">
-                                    ${result.truncation_info.original_document_length ? 
-                                        `<li>Original document: ${result.truncation_info.original_document_length} chars → 
-                                         Processed: ${result.truncation_info.processed_document_length} chars</li>` : ''}
-                                    ${result.truncation_info.original_input_template_length ? 
-                                        `<li>Original input template: ${result.truncation_info.original_input_template_length} chars → 
-                                         Processed: ${result.truncation_info.processed_input_template_length} chars</li>` : ''}
-                                    ${result.truncation_info.original_output_template_length ? 
-                                        `<li>Original output template: ${result.truncation_info.original_output_template_length} chars → 
-                                         Processed: ${result.truncation_info.processed_output_template_length} chars</li>` : ''}
-                                    ${result.truncation_info.aggressive_truncation ? 
-                                        `<li><strong>Note:</strong> Aggressive truncation was applied due to content size.</li>` : ''}
-                                </ul>
-                            </div>
-                        </div>
-                    </div>` : ''}
-                
-                <div class="d-flex justify-content-end">
-                    <button type="button" class="btn btn-outline-primary btn-sm me-2" onclick="copyToClipboard('${encodeURIComponent(result.transformed_content)}')">
-                        <i class="bi bi-clipboard"></i> Copy to Clipboard
-                    </button>
-                    ${result.download_path ? 
-                        `<a href="${result.download_path}" class="btn btn-outline-success btn-sm" download>
-                            <i class="bi bi-download"></i> Download CSV
-                         </a>` : 
-                        `<button type="button" class="btn btn-outline-success btn-sm" onclick="downloadStringAsFile(decodeURIComponent('${encodeURIComponent(result.transformed_content)}'), 'transformed_content.csv', 'text/csv')">
-                            <i class="bi bi-download"></i> Download CSV
-                         </button>`}
-                </div>
-                
-                ${result.note ? `<div class="alert alert-info mt-3">${result.note}</div>` : ''}
-            `;
+            debugLog('Displaying direct transformation result');
+            displayTransformationResult(result, resultsContent);
             
             // Re-enable the button
             debugLog('Re-enabling transform button');
@@ -573,6 +535,237 @@ async function transformDocument(documentId) {
         console.error('Error in transformDocument:', error);
         alert(`Error in transform process: ${error.message}`);
     }
+}
+
+/**
+ * Poll for job status until complete or error
+ * @param {string} jobId - The job ID to check
+ * @param {string} token - Auth token
+ * @param {HTMLElement} resultsContent - The element to update with results
+ * @param {HTMLElement} transformButton - The button to re-enable when done
+ */
+async function pollJobStatus(jobId, token, resultsContent, transformButton) {
+    debugLog(`Starting job status polling for job ${jobId}`);
+    
+    // Get the progress bar and status message elements
+    const progressBar = document.getElementById('job-progress-bar');
+    const statusMessage = document.getElementById('job-status-message');
+    
+    let pollCount = 0;
+    let isComplete = false;
+    
+    // Start with shorter intervals, then increase
+    const pollIntervals = [1000, 2000, 3000, 5000, 5000, 5000, 10000]; // milliseconds
+    let currentInterval = 0;
+    
+    while (!isComplete && pollCount < 30) { // Limit to 30 polls (about 2-3 minutes)
+        pollCount++;
+        
+        try {
+            // Calculate a progress percentage based on poll count (just for UI feedback)
+            const progressPercent = Math.min(Math.floor(pollCount * 5), 90); // Max 90% until complete
+            if (progressBar) {
+                progressBar.style.width = `${progressPercent}%`;
+                progressBar.setAttribute('aria-valuenow', progressPercent);
+            }
+            
+            if (statusMessage) {
+                if (pollCount <= 2) {
+                    statusMessage.textContent = 'Job queued. Starting processing...';
+                } else if (pollCount <= 5) {
+                    statusMessage.textContent = 'Processing your document...';
+                } else if (pollCount <= 10) {
+                    statusMessage.textContent = 'Still working... This is a complex transformation.';
+                } else {
+                    statusMessage.textContent = 'Almost there... Processing large documents can take a minute or two.';
+                }
+            }
+            
+            // Wait before checking status
+            const delayTime = pollIntervals[Math.min(currentInterval, pollIntervals.length - 1)];
+            debugLog(`Waiting ${delayTime}ms before checking job status`);
+            await new Promise(resolve => setTimeout(resolve, delayTime));
+            currentInterval++;
+            
+            // Check job status
+            debugLog(`Checking status for job ${jobId} (poll #${pollCount})`);
+            const response = await fetch(`/jobs/${jobId}`, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+            
+            if (!response.ok) {
+                throw new Error(`Failed to check job status: ${response.status} ${response.statusText}`);
+            }
+            
+            const jobData = await response.json();
+            debugLog(`Job status response:`, jobData);
+            
+            // Check job status
+            if (jobData.status === 'error') {
+                // Job failed
+                debugLog(`Job ${jobId} failed:`, jobData.result?.error || 'Unknown error');
+                isComplete = true;
+                
+                resultsContent.innerHTML = `
+                    <div class="alert alert-danger">
+                        <strong>Transformation Failed</strong>
+                        <p>${jobData.result?.error || 'Unknown error occurred during transformation'}</p>
+                    </div>
+                `;
+                
+                transformButton.disabled = false;
+                return;
+            }
+            else if (jobData.status === 'completed') {
+                // Job completed successfully
+                debugLog(`Job ${jobId} completed successfully`);
+                isComplete = true;
+                
+                // Get the result from the job data
+                const result = jobData.result;
+                if (!result) {
+                    throw new Error('Job completed but no result data found');
+                }
+                
+                // Display the transformation result
+                displayTransformationResult(result, resultsContent);
+                transformButton.disabled = false;
+                return;
+            }
+            
+            // If not completed or error, continue polling
+            debugLog(`Job ${jobId} still in progress (status: ${jobData.status}). Continuing to poll...`);
+            
+        } catch (error) {
+            debugLog(`Error polling job status: ${error.message}`);
+            console.error('Error polling job status:', error);
+            
+            // Don't fail immediately, try a few more times
+            if (pollCount >= 5) {
+                resultsContent.innerHTML = `
+                    <div class="alert alert-danger">
+                        <strong>Error Checking Job Status</strong>
+                        <p>${error.message}</p>
+                        <p>The transformation job may still be running in the background. Please check your documents list later.</p>
+                    </div>
+                `;
+                
+                transformButton.disabled = false;
+                return;
+            }
+        }
+    }
+    
+    // If we get here, we've reached the maximum number of polls
+    if (!isComplete) {
+        debugLog(`Reached maximum number of polls (${pollCount}) for job ${jobId}`);
+        resultsContent.innerHTML = `
+            <div class="alert alert-warning">
+                <strong>Transformation Taking Longer Than Expected</strong>
+                <p>Your document transformation is still being processed.</p>
+                <p>Please check your documents list in a few minutes to see the results.</p>
+            </div>
+        `;
+        
+        transformButton.disabled = false;
+    }
+}
+
+/**
+ * Display transformation result in the UI
+ * @param {Object} result - The transformation result
+ * @param {HTMLElement} resultsContent - The element to update with results
+ */
+function displayTransformationResult(result, resultsContent) {
+    // Get the file type - handle both formats from direct API and job result
+    let fileType = 'txt';
+    if (result.file_type) {
+        fileType = result.file_type;
+    } else if (result.formats && result.formats.output) {
+        fileType = result.formats.output.replace('.', '');
+    }
+    
+    // Check if we have transformed content
+    const transformedContent = result.transformed_content || 'No content available';
+    
+    resultsContent.innerHTML = `
+        <div class="alert alert-success">
+            <strong>Transformation Complete!</strong>
+        </div>
+        
+        <div class="mb-3">
+            <strong>Input Document:</strong> ${result.document_title}
+        </div>
+        <div class="mb-3">
+            <strong>Input Template:</strong> ${result.template_input_title}
+        </div>
+        <div class="mb-3">
+            <strong>Output Template:</strong> ${result.template_output_title}
+        </div>
+        <div class="mb-3">
+            <strong>Timestamp:</strong> ${new Date(result.timestamp).toLocaleString()}
+        </div>
+        
+        <h5 class="mt-4">Transformed Content:</h5>
+        <div class="card mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>Transformed Document</span>
+                <div>
+                    <span class="badge bg-primary">${fileType}</span>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <pre class="bg-light p-3 m-0 border-0 rounded-0" style="max-height: 400px; overflow-y: auto; white-space: pre-wrap;">${transformedContent}</pre>
+            </div>
+            ${result.parse_error ? 
+                `<div class="card-footer bg-warning text-dark">
+                    <small><strong>Warning:</strong> ${result.parse_error}</small>
+                 </div>` : ''}
+        </div>
+        
+        ${result.truncation_info && Object.keys(result.truncation_info).length > 0 ? 
+            `<div class="alert alert-info">
+                <strong>Document Truncation:</strong> Some content was truncated during processing.
+                <button class="btn btn-sm btn-outline-info float-end" type="button" data-bs-toggle="collapse" data-bs-target="#truncationDetails">
+                    Details
+                </button>
+                <div class="collapse mt-2" id="truncationDetails">
+                    <div class="card card-body">
+                        <ul class="list-unstyled mb-0">
+                            ${result.truncation_info.original_document_length ? 
+                                `<li>Original document: ${result.truncation_info.original_document_length} chars → 
+                                 Processed: ${result.truncation_info.processed_document_length} chars</li>` : ''}
+                            ${result.truncation_info.original_input_template_length ? 
+                                `<li>Original input template: ${result.truncation_info.original_input_template_length} chars → 
+                                 Processed: ${result.truncation_info.processed_input_template_length} chars</li>` : ''}
+                            ${result.truncation_info.original_output_template_length ? 
+                                `<li>Original output template: ${result.truncation_info.original_output_template_length} chars → 
+                                 Processed: ${result.truncation_info.processed_output_template_length} chars</li>` : ''}
+                            ${result.truncation_info.aggressive_truncation ? 
+                                `<li><strong>Note:</strong> Aggressive truncation was applied due to content size.</li>` : ''}
+                        </ul>
+                    </div>
+                </div>
+            </div>` : ''}
+        
+        <div class="d-flex justify-content-end">
+            <button type="button" class="btn btn-outline-primary btn-sm me-2" onclick="copyToClipboard('${encodeURIComponent(transformedContent)}')">
+                <i class="bi bi-clipboard"></i> Copy to Clipboard
+            </button>
+            ${result.download_path ? 
+                `<a href="${result.download_path}" class="btn btn-outline-success btn-sm" download>
+                    <i class="bi bi-download"></i> Download CSV
+                 </a>` : 
+                `<button type="button" class="btn btn-outline-success btn-sm" onclick="downloadStringAsFile(decodeURIComponent('${encodeURIComponent(transformedContent)}'), 'transformed_content.csv', 'text/csv')">
+                    <i class="bi bi-download"></i> Download CSV
+                </button>`}
+        </div>
+        
+        ${result.note ? `<div class="alert alert-info mt-3">${result.note}</div>` : ''}
+    `;
 }
 
 // Functions moved to main.js
