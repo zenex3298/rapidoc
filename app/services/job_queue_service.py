@@ -29,7 +29,17 @@ class JobQueueService:
         try:
             # Try to get updated Redis URL (in case it changed during provisioning)
             updated_redis_url = os.getenv('REDIS_URL') or os.getenv('REDIS') or REDIS_URL
-            self.redis_client = redis.from_url(updated_redis_url)
+            
+            # For Heroku Redis URLs (rediss://), skip SSL certificate verification
+            if updated_redis_url.startswith('rediss://'):
+                logger.info(f"Using secure Redis connection with SSL verification disabled")
+                self.redis_client = redis.from_url(
+                    updated_redis_url, 
+                    ssl_cert_reqs=None  # Skip certificate verification for Heroku Redis
+                )
+            else:
+                self.redis_client = redis.from_url(updated_redis_url)
+                
             logger.info(f"Job queue service initialized with Redis")
         except Exception as e:
             logger.error(f"Error initializing Redis client: {e}")

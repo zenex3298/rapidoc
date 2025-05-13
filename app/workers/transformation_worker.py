@@ -44,7 +44,15 @@ else:
 
 # Initialize Redis client with retry mechanism
 try:
-    redis_client = redis.from_url(REDIS_URL)
+    # For Heroku Redis URLs (rediss://), skip SSL certificate verification
+    if REDIS_URL.startswith('rediss://'):
+        logger.info(f"Using secure Redis connection with SSL verification disabled")
+        redis_client = redis.from_url(
+            REDIS_URL, 
+            ssl_cert_reqs=None  # Skip certificate verification for Heroku Redis
+        )
+    else:
+        redis_client = redis.from_url(REDIS_URL)
 except Exception as e:
     logger.error(f"Error initializing Redis client: {e}")
     redis_client = None  # Will be retried in the main loop
@@ -345,7 +353,15 @@ def poll_for_jobs():
                 # Try to get updated Redis URL (in case it changed during provisioning)
                 updated_redis_url = os.getenv('REDIS_URL') or os.getenv('REDIS') or REDIS_URL
                 logger.info(f"Attempting to connect to Redis at {updated_redis_url.split('@')[0]}[...]")
-                redis_client = redis.from_url(updated_redis_url)
+                # For Heroku Redis URLs (rediss://), skip SSL certificate verification
+                if updated_redis_url.startswith('rediss://'):
+                    logger.info(f"Using secure Redis connection with SSL verification disabled")
+                    redis_client = redis.from_url(
+                        updated_redis_url, 
+                        ssl_cert_reqs=None  # Skip certificate verification for Heroku Redis
+                    )
+                else:
+                    redis_client = redis.from_url(updated_redis_url)
                 logger.info("Successfully connected to Redis")
                 retry_count = 0  # Reset retry count on successful connection
             except Exception as e:
