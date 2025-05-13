@@ -1,0 +1,54 @@
+{
+  "template_name": "Standard Contract",
+  "version": "1.0.0",
+  "created_at": "2025-05-13T12:24:31.985759",
+  "sections": [
+    {
+      "id": 1,
+      "name": "Introduction",
+      "required": true
+    },
+    {
+      "id": 2,
+      "name": "Parties",
+      "required": true
+    },
+    {
+      "id": 3,
+      "name": "Terms",
+      "required": true
+    },
+    {
+      "id": 4,
+      "name": "Signatures",
+      "required": true
+    },
+    {
+      "id": 5,
+      "name": "Appendices",
+      "required": false
+    }
+  ],
+  "variables": {
+    "party_a": {
+      "type": "string",
+      "required": true
+    },
+    "party_b": {
+      "type": "string",
+      "required": true
+    },
+    "agreement_date": {
+      "type": "date",
+      "required": true
+    },
+    "amount": {
+      "type": "number",
+      "required": true
+    },
+    "term_months": {
+      "type": "integer",
+      "required": true
+    }
+  }
+}

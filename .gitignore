@@ -1,0 +1,54 @@
+# Python virtual environment
+venv/
+env/
+ENV/
+
+# Environment variables
+.env
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+logs/
+*.log
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test coverage
+.coverage
+htmlcov/
+
+# Pytest
+.pytest_cache/
+
+# Upload and output directories
+uploads/*
+outputs/*
+
+# Alembic backups and temporary files
+alembic/versions_backup/
+
+# Auth tokens and credentials
+.auth_token.json
+**/.claude/settings.local.json

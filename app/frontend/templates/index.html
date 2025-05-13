@@ -1,0 +1,88 @@
+{% extends "layout.html" %}
+
+{% block title %}Home - RapidocsAI{% endblock %}
+
+{% block content %}
+<div class="jumbotron py-5 bg-light rounded-3 mb-4">
+    <div class="container">
+        <h1 class="display-4">RapidocsAI</h1>
+        <p class="lead">Intelligent document management powered by AI. Upload, manage, and analyze your documents with ease.</p>
+        {% if not current_user %}
+            <div class="mt-4">
+                <a href="/login" class="btn btn-primary btn-lg me-2">Login</a>
+                <a href="/register" class="btn btn-secondary btn-lg">Register</a>
+            </div>
+        {% else %}
+            <div class="mt-4">
+                <a href="/upload" class="btn btn-primary btn-lg me-2">Upload Document</a>
+                <a href="/documents" class="btn btn-secondary btn-lg">My Documents</a>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-4 mb-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">Smart Document Upload</h5>
+                <p class="card-text">Upload your documents securely to RapidocsAI. We support PDF, DOC, DOCX, and TXT files.</p>
+                <a href="/upload" class="btn btn-outline-primary">Upload Now</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 mb-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">Document Management</h5>
+                <p class="card-text">RapidocsAI helps you organize and transform your documents with an easy-to-use interface.</p>
+                <a href="/documents" class="btn btn-outline-primary">View Documents</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 mb-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">Enterprise-Grade Security</h5>
+                <p class="card-text">RapidocsAI ensures your documents are securely stored with end-to-end encryption and accessible only by you.</p>
+                <a href="/register" class="btn btn-outline-primary">Create Account</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h3 class="mb-0">How RapidocsAI Works</h3>
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-md-4 mb-3 mb-md-0">
+                        <div class="bg-light p-3 rounded">
+                            <h4>1. Upload</h4>
+                            <p>Upload your documents through our intuitive drag-and-drop interface.</p>
+                            <i class="bi bi-cloud-upload fs-1"></i>
+                        </div>
+                    </div>
+                    <div class="col-md-4 mb-3 mb-md-0">
+                        <div class="bg-light p-3 rounded">
+                            <h4>2. Process</h4>
+                            <p>Our AI engine automatically processes and extracts key information from your documents.</p>
+                            <i class="bi bi-gear fs-1"></i>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="bg-light p-3 rounded">
+                            <h4>3. Transform</h4>
+                            <p>Transform your documents into new formats using templates to match your specific needs.</p>
+                            <i class="bi bi-arrow-repeat fs-1"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

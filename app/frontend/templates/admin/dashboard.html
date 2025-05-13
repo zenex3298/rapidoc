@@ -1,0 +1,592 @@
+{% extends "layout.html" %}
+
+{% block title %}Admin Dashboard - RapidocsAI{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+  <div class="row">
+    <div class="col-md-3">
+      <!-- Admin navigation sidebar -->
+      <div class="list-group">
+        <a href="#overview" class="list-group-item list-group-item-action active" data-section="overview">Overview</a>
+        <a href="#users" class="list-group-item list-group-item-action" data-section="users">User Management</a>
+        <a href="#activity" class="list-group-item list-group-item-action" data-section="activity">Activity Logs</a>
+        <a href="#stats" class="list-group-item list-group-item-action" data-section="stats">System Statistics</a>
+      </div>
+    </div>
+    
+    <div class="col-md-9">
+      <!-- Dashboard content -->
+      <div id="overview" class="dashboard-section">
+        <h2>System Overview</h2>
+        <div class="row">
+          <div class="col-md-3 mb-3">
+            <div class="card bg-primary text-white">
+              <div class="card-body">
+                <h5 class="card-title">Total Users</h5>
+                <h2 id="total-users" class="card-text">0</h2>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-3 mb-3">
+            <div class="card bg-success text-white">
+              <div class="card-body">
+                <h5 class="card-title">Total Documents</h5>
+                <h2 id="total-documents" class="card-text">0</h2>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-3 mb-3">
+            <div class="card bg-info text-white">
+              <div class="card-body">
+                <h5 class="card-title">Logins Today</h5>
+                <h2 id="logins-today" class="card-text">0</h2>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-3 mb-3">
+            <div class="card bg-warning text-white">
+              <div class="card-body">
+                <h5 class="card-title">New Users (30d)</h5>
+                <h2 id="new-users" class="card-text">0</h2>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="col-md-6">
+            <div class="card mb-3">
+              <div class="card-header">User Activity (Last 7 Days)</div>
+              <div class="card-body">
+                <canvas id="activityChart" height="200"></canvas>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="card mb-3">
+              <div class="card-header">Documents Processed</div>
+              <div class="card-body">
+                <canvas id="documentsChart" height="200"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <div id="users" class="dashboard-section d-none">
+        <!-- User management interface -->
+        <h2>User Management</h2>
+        <div class="table-responsive">
+          <table class="table table-striped" id="userTable">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Username</th>
+                <th>Email</th>
+                <th>Status</th>
+                <th>Admin</th>
+                <th>Created</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="users-table-body">
+              <tr>
+                <td colspan="7" class="text-center">Loading users...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      
+      <div id="activity" class="dashboard-section d-none">
+        <!-- Activity logs with filtering -->
+        <h2>Activity Logs</h2>
+        <div class="card mb-3">
+          <div class="card-header">Filters</div>
+          <div class="card-body">
+            <form id="activity-filter-form" class="row g-3">
+              <div class="col-md-3">
+                <label for="filter-action" class="form-label">Action</label>
+                <select id="filter-action" class="form-select">
+                  <option value="">All Actions</option>
+                  <option value="user_login">Login</option>
+                  <option value="user_registration">Registration</option>
+                  <option value="document_upload">Document Upload</option>
+                  <option value="document_processing">Document Processing</option>
+                </select>
+              </div>
+              <div class="col-md-3">
+                <label for="filter-user" class="form-label">User ID</label>
+                <input type="number" class="form-control" id="filter-user" placeholder="User ID">
+              </div>
+              <div class="col-md-3">
+                <label for="filter-from-date" class="form-label">From Date</label>
+                <input type="date" class="form-control" id="filter-from-date">
+              </div>
+              <div class="col-md-3">
+                <label for="filter-to-date" class="form-label">To Date</label>
+                <input type="date" class="form-control" id="filter-to-date">
+              </div>
+              <div class="col-12">
+                <button type="submit" class="btn btn-primary">Apply Filters</button>
+                <button type="reset" class="btn btn-secondary">Reset</button>
+              </div>
+            </form>
+          </div>
+        </div>
+        
+        <div class="table-responsive">
+          <table class="table table-striped" id="activityTable">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>User</th>
+                <th>Action</th>
+                <th>Description</th>
+                <th>IP Address</th>
+                <th>Timestamp</th>
+              </tr>
+            </thead>
+            <tbody id="activity-table-body">
+              <tr>
+                <td colspan="6" class="text-center">Loading activities...</td>
+              </tr>
+            </tbody>
+          </table>
+          <nav aria-label="Activity log pagination">
+            <ul class="pagination justify-content-center" id="activity-pagination">
+              <!-- Pagination will be added dynamically -->
+            </ul>
+          </nav>
+        </div>
+      </div>
+      
+      <div id="stats" class="dashboard-section d-none">
+        <!-- System stats -->
+        <h2>System Statistics</h2>
+        <div class="row">
+          <div class="col-md-6">
+            <div class="card mb-3">
+              <div class="card-header">Document Processing Stats</div>
+              <div class="card-body">
+                <canvas id="docTypeChart" height="200"></canvas>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="card mb-3">
+              <div class="card-header">User Activity by Hour</div>
+              <div class="card-body">
+                <canvas id="activityHourChart" height="200"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+// Admin dashboard JavaScript
+document.addEventListener('DOMContentLoaded', function() {
+  // Check if user is logged in and is admin
+  const token = localStorage.getItem('auth_token');
+  if (!token) {
+    window.location.href = "/login";
+    return;
+  }
+  
+  // Load initial data
+  loadOverviewData();
+  
+  // Set up navigation
+  document.querySelectorAll('.list-group-item').forEach(item => {
+    item.addEventListener('click', function(e) {
+      e.preventDefault();
+      
+      // Hide all sections
+      document.querySelectorAll('.dashboard-section').forEach(section => {
+        section.classList.add('d-none');
+      });
+      
+      // Show selected section
+      const targetId = this.getAttribute('href').substring(1);
+      document.getElementById(targetId).classList.remove('d-none');
+      
+      // Update active state
+      document.querySelectorAll('.list-group-item').forEach(i => {
+        i.classList.remove('active');
+      });
+      this.classList.add('active');
+      
+      // Load data for this section
+      const sectionType = this.getAttribute('data-section');
+      if (sectionType === 'users') {
+        loadUserData();
+      } else if (sectionType === 'activity') {
+        loadActivityData();
+      } else if (sectionType === 'stats') {
+        loadStatsData();
+      }
+    });
+  });
+
+  // Set up activity filter form
+  document.getElementById('activity-filter-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    loadActivityData();
+  });
+
+  document.getElementById('activity-filter-form').addEventListener('reset', function(e) {
+    setTimeout(() => loadActivityData(), 10);
+  });
+});
+
+async function loadOverviewData() {
+  try {
+    const token = localStorage.getItem('auth_token');
+    
+    // Fetch users count
+    const usersResponse = await fetch('/admin/users', {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+    
+    if (usersResponse.ok) {
+      const users = await usersResponse.json();
+      document.getElementById('total-users').textContent = users.length;
+      document.getElementById('new-users').textContent = users.filter(
+        u => new Date(u.created_at) > new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+      ).length;
+    }
+    
+    // Fetch activity logs for login count today
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const todayStartStr = todayStart.toISOString().split('T')[0];
+    
+    const logsResponse = await fetch(`/admin/activity-logs/search?action=user_login&from_date=${todayStartStr}`, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+    
+    if (logsResponse.ok) {
+      const logs = await logsResponse.json();
+      document.getElementById('logins-today').textContent = logs.length;
+    }
+    
+    // Create activity chart
+    createActivityChart();
+    
+    // Create documents chart
+    createDocumentsChart();
+    
+  } catch (error) {
+    console.error('Error loading overview data:', error);
+  }
+}
+
+function createActivityChart() {
+  const ctx = document.getElementById('activityChart').getContext('2d');
+  
+  // Sample data - would be replaced with real data from API
+  const activityChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: ['Day 1', 'Day 2', 'Day 3', 'Day 4', 'Day 5', 'Day 6', 'Day 7'],
+      datasets: [{
+        label: 'Logins',
+        data: [12, 19, 3, 5, 2, 3, 7],
+        borderColor: 'rgba(75, 192, 192, 1)',
+        backgroundColor: 'rgba(75, 192, 192, 0.2)',
+        tension: 0.1
+      }]
+    }
+  });
+}
+
+function createDocumentsChart() {
+  const ctx = document.getElementById('documentsChart').getContext('2d');
+  
+  // Sample data - would be replaced with real data from API
+  const documentsChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: ['Legal', 'Real Estate', 'Contract', 'Lease', 'Other'],
+      datasets: [{
+        label: 'Document Count',
+        data: [12, 19, 3, 5, 2],
+        backgroundColor: [
+          'rgba(255, 99, 132, 0.2)',
+          'rgba(54, 162, 235, 0.2)',
+          'rgba(255, 206, 86, 0.2)',
+          'rgba(75, 192, 192, 0.2)',
+          'rgba(153, 102, 255, 0.2)'
+        ],
+        borderColor: [
+          'rgba(255, 99, 132, 1)',
+          'rgba(54, 162, 235, 1)',
+          'rgba(255, 206, 86, 1)',
+          'rgba(75, 192, 192, 1)',
+          'rgba(153, 102, 255, 1)'
+        ],
+        borderWidth: 1
+      }]
+    }
+  });
+}
+
+async function loadUserData() {
+  try {
+    const token = localStorage.getItem('auth_token');
+    const response = await fetch('/admin/users', {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+    
+    if (response.ok) {
+      const users = await response.json();
+      const tableBody = document.getElementById('users-table-body');
+      
+      if (users.length === 0) {
+        tableBody.innerHTML = `<tr><td colspan="7" class="text-center">No users found</td></tr>`;
+        return;
+      }
+      
+      tableBody.innerHTML = users.map(user => `
+        <tr>
+          <td>${user.id}</td>
+          <td>${user.username}</td>
+          <td>${user.email}</td>
+          <td>
+            <span class="badge ${user.is_active ? 'bg-success' : 'bg-danger'}">
+              ${user.is_active ? 'Active' : 'Inactive'}
+            </span>
+          </td>
+          <td>
+            <span class="badge ${user.is_admin ? 'bg-primary' : 'bg-secondary'}">
+              ${user.is_admin ? 'Admin' : 'User'}
+            </span>
+          </td>
+          <td>${new Date(user.created_at).toLocaleString()}</td>
+          <td>
+            <div class="btn-group btn-group-sm">
+              <button class="btn btn-outline-primary" onclick="toggleUserAdmin(${user.id})">
+                ${user.is_admin ? 'Remove Admin' : 'Make Admin'}
+              </button>
+              <button class="btn btn-outline-${user.is_active ? 'danger' : 'success'}" onclick="toggleUserActive(${user.id})">
+                ${user.is_active ? 'Deactivate' : 'Activate'}
+              </button>
+            </div>
+          </td>
+        </tr>
+      `).join('');
+    }
+  } catch (error) {
+    console.error('Error loading user data:', error);
+    document.getElementById('users-table-body').innerHTML = `
+      <tr><td colspan="7" class="text-center text-danger">Error loading users</td></tr>
+    `;
+  }
+}
+
+async function toggleUserAdmin(userId) {
+  try {
+    const token = localStorage.getItem('auth_token');
+    const response = await fetch(`/admin/users/${userId}/toggle-admin`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+    
+    if (response.ok) {
+      // Reload user data
+      loadUserData();
+    } else {
+      const error = await response.json();
+      alert(`Error: ${error.detail || 'Failed to update user admin status'}`);
+    }
+  } catch (error) {
+    console.error('Error toggling admin status:', error);
+    alert('Error toggling admin status. Please try again.');
+  }
+}
+
+async function toggleUserActive(userId) {
+  try {
+    const token = localStorage.getItem('auth_token');
+    const response = await fetch(`/admin/users/${userId}/toggle-active`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+    
+    if (response.ok) {
+      // Reload user data
+      loadUserData();
+    } else {
+      const error = await response.json();
+      alert(`Error: ${error.detail || 'Failed to update user status'}`);
+    }
+  } catch (error) {
+    console.error('Error toggling active status:', error);
+    alert('Error toggling active status. Please try again.');
+  }
+}
+
+async function loadActivityData(page = 1) {
+  try {
+    const token = localStorage.getItem('auth_token');
+    const limit = 10;
+    const skip = (page - 1) * limit;
+    
+    // Get filter values
+    const action = document.getElementById('filter-action').value;
+    const userId = document.getElementById('filter-user').value;
+    const fromDate = document.getElementById('filter-from-date').value;
+    const toDate = document.getElementById('filter-to-date').value;
+    
+    // Build query string
+    let queryParams = new URLSearchParams();
+    queryParams.append('skip', skip);
+    queryParams.append('limit', limit);
+    
+    if (action) queryParams.append('action', action);
+    if (userId) queryParams.append('user_id', userId);
+    if (fromDate) queryParams.append('from_date', fromDate);
+    if (toDate) queryParams.append('to_date', toDate);
+    
+    const url = `/admin/activity-logs/search?${queryParams.toString()}`;
+    
+    const response = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+    
+    if (response.ok) {
+      const logs = await response.json();
+      const tableBody = document.getElementById('activity-table-body');
+      
+      if (logs.length === 0) {
+        tableBody.innerHTML = `<tr><td colspan="6" class="text-center">No activity logs found</td></tr>`;
+        document.getElementById('activity-pagination').innerHTML = '';
+        return;
+      }
+      
+      tableBody.innerHTML = logs.map(log => `
+        <tr>
+          <td>${log.id}</td>
+          <td>${log.user_id || 'N/A'}</td>
+          <td>${log.action}</td>
+          <td>${log.description || 'N/A'}</td>
+          <td>${log.ip_address || 'N/A'}</td>
+          <td>${new Date(log.timestamp).toLocaleString()}</td>
+        </tr>
+      `).join('');
+      
+      // Create simple pagination (this would be improved with total count from API)
+      const pagination = document.getElementById('activity-pagination');
+      pagination.innerHTML = `
+        <li class="page-item ${page <= 1 ? 'disabled' : ''}">
+          <a class="page-link" href="#" onclick="loadActivityData(${page - 1}); return false;">Previous</a>
+        </li>
+        <li class="page-item active">
+          <span class="page-link">${page}</span>
+        </li>
+        <li class="page-item ${logs.length < limit ? 'disabled' : ''}">
+          <a class="page-link" href="#" onclick="loadActivityData(${page + 1}); return false;">Next</a>
+        </li>
+      `;
+    }
+  } catch (error) {
+    console.error('Error loading activity data:', error);
+    document.getElementById('activity-table-body').innerHTML = `
+      <tr><td colspan="6" class="text-center text-danger">Error loading activity logs</td></tr>
+    `;
+  }
+}
+
+async function loadStatsData() {
+  try {
+    // Load user activity by hour chart
+    createActivityHourChart();
+    
+    // Load document type chart
+    createDocTypeChart();
+  } catch (error) {
+    console.error('Error loading stats data:', error);
+  }
+}
+
+function createActivityHourChart() {
+  const ctx = document.getElementById('activityHourChart').getContext('2d');
+  
+  // Sample data - would be replaced with real data from API
+  const hours = Array.from({length: 24}, (_, i) => i);
+  const activityHourChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: hours.map(h => `${h}:00`),
+      datasets: [{
+        label: 'Activity Count',
+        data: hours.map(() => Math.floor(Math.random() * 10)),
+        fill: true,
+        backgroundColor: 'rgba(54, 162, 235, 0.2)',
+        borderColor: 'rgba(54, 162, 235, 1)',
+        tension: 0.1
+      }]
+    },
+    options: {
+      scales: {
+        x: {
+          title: {
+            display: true,
+            text: 'Hour of Day'
+          }
+        },
+        y: {
+          beginAtZero: true,
+          title: {
+            display: true,
+            text: 'Activity Count'
+          }
+        }
+      }
+    }
+  });
+}
+
+function createDocTypeChart() {
+  const ctx = document.getElementById('docTypeChart').getContext('2d');
+  
+  // Sample data - would be replaced with real data from API
+  const docTypeChart = new Chart(ctx, {
+    type: 'pie',
+    data: {
+      labels: ['Legal', 'Real Estate', 'Contract', 'Lease', 'Other'],
+      datasets: [{
+        data: [12, 19, 3, 5, 2],
+        backgroundColor: [
+          'rgba(255, 99, 132, 0.6)',
+          'rgba(54, 162, 235, 0.6)',
+          'rgba(255, 206, 86, 0.6)',
+          'rgba(75, 192, 192, 0.6)',
+          'rgba(153, 102, 255, 0.6)'
+        ]
+      }]
+    }
+  });
+}
+</script>
+{% endblock %}

@@ -1,0 +1,580 @@
+{% extends "layout.html" %}
+
+{% block title %}My Documents - RapidocsAI{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <h1>My Documents</h1>
+    </div>
+    <div class="col-auto">
+        <a href="/upload" class="btn btn-primary">Upload New Document</a>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col">
+        <div class="table-responsive">
+            <table class="table table-striped table-hover">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Title</th>
+                        <th>Document Type</th>
+                        <th>Status</th>
+                        <th>Created</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="documents-table-body">
+                    <!-- Documents will be loaded here -->
+                    <tr>
+                        <td colspan="6" class="text-center">Loading documents...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', async function() {
+    // Check if user is logged in
+    const token = localStorage.getItem('auth_token');
+    if (!token) {
+        window.location.href = "/login";
+        return;
+    }
+    
+    try {
+        const response = await fetch('/documents/', {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        
+        if (response.status === 401) {
+            // Token expired or invalid
+            localStorage.removeItem('auth_token');
+            window.location.href = "/login";
+            return;
+        }
+        
+        const documents = await response.json();
+        const tableBody = document.getElementById('documents-table-body');
+        
+        if (documents.length === 0) {
+            tableBody.innerHTML = `
+                <tr>
+                    <td colspan="6" class="text-center">No documents found. <a href="/upload">Upload your first document</a>.</td>
+                </tr>
+            `;
+            return;
+        }
+        
+        tableBody.innerHTML = documents.map(doc => `
+            <tr>
+                <td>${doc.id}</td>
+                <td>${doc.title}</td>
+                <td>${doc.doc_type}</td>
+                <td><span class="badge ${getStatusBadgeClass(doc.status)}">${doc.status}</span></td>
+                <td>${new Date(doc.created_at).toLocaleString()}</td>
+                <td>
+                    <div class="btn-group btn-group-sm" role="group">
+                        <button class="btn btn-info" onclick="viewDocument(${doc.id})">View</button>
+                        <button class="btn btn-primary" onclick="showTransformModal(${doc.id})">Transform</button>
+                        <button class="btn btn-danger" onclick="deleteDocument(${doc.id})">Delete</button>
+                    </div>
+                </td>
+            </tr>
+        `).join('');
+    } catch (error) {
+        console.error('Error fetching documents:', error);
+        document.getElementById('documents-table-body').innerHTML = `
+            <tr>
+                <td colspan="6" class="text-center text-danger">Error loading documents. Please try again.</td>
+            </tr>
+        `;
+    }
+});
+
+function getStatusBadgeClass(status) {
+    switch (status) {
+        case 'processed': return 'bg-success';
+        case 'processing': return 'bg-warning';
+        case 'error': return 'bg-danger';
+        default: return 'bg-secondary';
+    }
+}
+
+async function viewDocument(id) {
+    try {
+        const token = localStorage.getItem('auth_token');
+        const response = await fetch(`/documents/${id}`, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error('Failed to fetch document details');
+        }
+        
+        const docObject = await response.json();
+        
+        // Create and show modal with document details
+        const modal = document.createElement('div');
+        modal.className = 'modal fade';
+        modal.id = 'documentModal';
+        modal.setAttribute('tabindex', '-1');
+        modal.innerHTML = `
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">${docObject.title}</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <strong>Description:</strong> ${docObject.description || 'No description'}
+                        </div>
+                        <div class="mb-3">
+                            <strong>Document Type:</strong> ${docObject.doc_type}
+                        </div>
+                        <div class="mb-3">
+                            <strong>Status:</strong> 
+                            <span class="badge ${getStatusBadgeClass(docObject.status)}">${docObject.status}</span>
+                        </div>
+                        <div class="mb-3">
+                            <strong>Original Filename:</strong> ${docObject.original_filename}
+                        </div>
+                        <div class="mb-3">
+                            <strong>Created:</strong> ${new Date(docObject.created_at).toLocaleString()}
+                        </div>
+                        <div class="mb-3">
+                            <strong>Last Updated:</strong> ${new Date(docObject.updated_at).toLocaleString()}
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        const modalInstance = new bootstrap.Modal(modal);
+        modalInstance.show();
+        
+        // Remove modal from DOM when hidden
+        modal.addEventListener('hidden.bs.modal', function() {
+            document.body.removeChild(modal);
+        });
+    } catch (error) {
+        console.error('Error viewing document:', error);
+        alert('Error viewing document details. Please try again.');
+    }
+}
+
+// Analyze function removed
+
+async function deleteDocument(id) {
+    if (!confirm(`Are you sure you want to delete document #${id}? This action cannot be undone.`)) {
+        return;
+    }
+    
+    try {
+        const token = localStorage.getItem('auth_token');
+        const response = await fetch(`/documents/${id}`, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error('Failed to delete document');
+        }
+        
+        alert('Document deleted successfully.');
+        // Reload the page to update the document list
+        window.location.reload();
+    } catch (error) {
+        console.error('Error deleting document:', error);
+        alert('Error deleting document. Please try again.');
+    }
+}
+
+// Debug function to log events
+function debugLog(message, data) {
+    console.log(`DEBUG [${new Date().toISOString()}]: ${message}`, data);
+}
+
+// Template transformation functions
+async function showTransformModal(documentId) {
+    debugLog('showTransformModal started with documentId', documentId);
+    try {
+        const token = localStorage.getItem('auth_token');
+        if (!token) {
+            debugLog('No auth token found');
+            throw new Error('Authentication token not found');
+        }
+        debugLog('Auth token retrieved', token.substring(0, 10) + '...');
+        
+        // Fetch the document details
+        debugLog('Fetching document details', `documentId: ${documentId}`);
+        const docResponse = await fetch(`/documents/${documentId}`, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        
+        debugLog('Document fetch response status', docResponse.status);
+        if (!docResponse.ok) {
+            throw new Error(`Failed to fetch document details: ${docResponse.status} ${docResponse.statusText}`);
+        }
+        
+        const docObject = await docResponse.json();
+        debugLog('Document details retrieved', docObject);
+        
+        // Fetch available templates
+        debugLog('Fetching templates');
+        const templatesResponse = await fetch('/documents/?tag=template', {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        
+        debugLog('Templates fetch response status', templatesResponse.status);
+        if (!templatesResponse.ok) {
+            throw new Error(`Failed to fetch templates: ${templatesResponse.status} ${templatesResponse.statusText}`);
+        }
+        
+        const templates = await templatesResponse.json();
+        debugLog('Templates retrieved', templates);
+        
+        if (templates.length < 2) {
+            debugLog('Not enough templates', templates.length);
+            alert('You need at least two template documents (input and output) to use the transformation feature. Please upload templates first.');
+            return;
+        }
+        
+        // Create and show the transformation modal
+        debugLog('Creating modal');
+        const modal = document.createElement('div');
+        modal.className = 'modal fade';
+        modal.id = 'transformModal';
+        modal.setAttribute('tabindex', '-1');
+        
+        // Store modal HTML in a variable for debugging
+        const modalHtml = `
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Transform Document: ${docObject.title}</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="alert alert-info">
+                            <strong>Document Transformation</strong>
+                            <p>This feature transforms your document using the selected templates as reference.</p>
+                            <p>Select an input template (similar format to your document) and an output template (desired format).</p>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="template-input-select" class="form-label"><strong>Select Input Template:</strong></label>
+                            <select class="form-control" id="template-input-select" required>
+                                <option value="">-- Select input template --</option>
+                                ${templates.map(t => `<option value="${t.id}">${t.title} (${t.doc_type})</option>`).join('')}
+                            </select>
+                            <div class="form-text">This should be a template with a similar format to your input document.</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="template-output-select" class="form-label"><strong>Select Output Template:</strong></label>
+                            <select class="form-control" id="template-output-select" required>
+                                <option value="">-- Select output template --</option>
+                                ${templates.map(t => `<option value="${t.id}">${t.title} (${t.doc_type})</option>`).join('')}
+                            </select>
+                            <div class="form-text">This template defines the desired output format.</div>
+                        </div>
+                        
+                        <div id="transform-results" class="mt-4 d-none">
+                            <h5>Transformation Results</h5>
+                            <div class="card">
+                                <div class="card-body" id="transform-results-content">
+                                    <!-- Results will be shown here -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                        <button type="button" class="btn btn-primary" id="transform-button" onclick="transformDocument(${docObject.id})">Transform Document</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        debugLog('Modal HTML generated', modalHtml.length);
+        modal.innerHTML = modalHtml;
+        
+        debugLog('Appending modal to document body');
+        document.body.appendChild(modal);
+        
+        debugLog('Checking if bootstrap is available', typeof bootstrap);
+        if (typeof bootstrap === 'undefined') {
+            throw new Error('Bootstrap is not defined');
+        }
+        
+        debugLog('Checking if bootstrap.Modal is available', typeof bootstrap.Modal);
+        if (typeof bootstrap.Modal === 'undefined') {
+            throw new Error('Bootstrap Modal is not defined');
+        }
+        
+        debugLog('Creating bootstrap modal instance');
+        try {
+            const modalInstance = new bootstrap.Modal(modal);
+            debugLog('Bootstrap modal instance created', modalInstance);
+            
+            debugLog('Showing modal');
+            modalInstance.show();
+            
+            // Remove modal from DOM when hidden
+            debugLog('Setting up hidden.bs.modal event listener');
+            modal.addEventListener('hidden.bs.modal', function() {
+                debugLog('Modal hidden, removing from DOM');
+                document.body.removeChild(modal);
+            });
+        } catch (modalError) {
+            debugLog('Error creating or showing modal', modalError);
+            throw modalError;
+        }
+    } catch (error) {
+        debugLog('Error in showTransformModal', error);
+        console.error('Error showing transform modal:', error);
+        alert('Error loading templates. Please try again.');
+    }
+}
+
+async function transformDocument(documentId) {
+    debugLog('transformDocument started with documentId', documentId);
+    
+    // Get DOM elements
+    debugLog('Getting DOM elements');
+    let templateInputId, templateOutputId, resultsContainer, resultsContent, transformButton;
+    
+    try {
+        templateInputId = document.getElementById('template-input-select');
+        debugLog('template-input-select element', templateInputId);
+        
+        templateOutputId = document.getElementById('template-output-select');
+        debugLog('template-output-select element', templateOutputId);
+        
+        resultsContainer = document.getElementById('transform-results');
+        debugLog('transform-results element', resultsContainer);
+        
+        resultsContent = document.getElementById('transform-results-content');
+        debugLog('transform-results-content element', resultsContent);
+        
+        transformButton = document.getElementById('transform-button');
+        debugLog('transform-button element', transformButton);
+        
+        // Check if elements exist
+        if (!templateInputId) {
+            throw new Error('template-input-select element not found');
+        }
+        if (!templateOutputId) {
+            throw new Error('template-output-select element not found');
+        }
+        if (!resultsContainer) {
+            throw new Error('transform-results element not found');
+        }
+        if (!resultsContent) {
+            throw new Error('transform-results-content element not found');
+        }
+        if (!transformButton) {
+            throw new Error('transform-button element not found');
+        }
+        
+        // Get values
+        const inputId = templateInputId.value;
+        const outputId = templateOutputId.value;
+        
+        debugLog('Template input ID', inputId);
+        debugLog('Template output ID', outputId);
+        
+        if (!inputId || !outputId) {
+            debugLog('Missing template selections');
+            alert('Please select both input and output templates');
+            return;
+        }
+        
+        if (inputId === outputId) {
+            debugLog('Same template selected for input and output');
+            alert('Please select different templates for input and output');
+            return;
+        }
+        
+        try {
+            // Show loading state
+            debugLog('Showing loading state');
+            transformButton.disabled = true;
+            resultsContainer.classList.remove('d-none');
+            resultsContent.innerHTML = `
+                <div class="text-center">
+                    <div class="spinner-border" role="status"></div>
+                    <p class="mt-2">Transforming document... This may take a moment.</p>
+                </div>
+            `;
+            
+            debugLog('Getting auth token');
+            const token = localStorage.getItem('auth_token');
+            if (!token) {
+                throw new Error('Authentication token not found');
+            }
+            
+            // Prepare request data
+            const requestData = {
+                template_input_id: parseInt(inputId),
+                template_output_id: parseInt(outputId)
+            };
+            debugLog('Request data', requestData);
+            
+            // Call the transform API
+            debugLog('Calling transform API', `URL: /documents/${documentId}/transform-with-templates`);
+            const response = await fetch(`/documents/${documentId}/transform-with-templates`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(requestData)
+            });
+            
+            debugLog('Transform API response status', response.status);
+            if (!response.ok) {
+                const responseText = await response.text();
+                debugLog('Error response text', responseText);
+                throw new Error(`Failed to transform document: ${response.status} ${response.statusText} - ${responseText}`);
+            }
+            
+            debugLog('Parsing response JSON');
+            const result = await response.json();
+            debugLog('Transform result', result);
+            
+            // Display the results
+            debugLog('Displaying results');
+            resultsContent.innerHTML = `
+                <div class="alert alert-success">
+                    <strong>Transformation Complete!</strong>
+                </div>
+                
+                <div class="mb-3">
+                    <strong>Input Document:</strong> ${result.document_title}
+                </div>
+                <div class="mb-3">
+                    <strong>Input Template:</strong> ${result.template_input_title}
+                </div>
+                <div class="mb-3">
+                    <strong>Output Template:</strong> ${result.template_output_title}
+                </div>
+                <div class="mb-3">
+                    <strong>Timestamp:</strong> ${new Date(result.timestamp).toLocaleString()}
+                </div>
+                
+                <h5 class="mt-4">Transformed Content:</h5>
+                <div class="card mb-3">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <span>Transformed Document</span>
+                        <div>
+                            <span class="badge bg-primary">${result.file_type || result.formats.output.replace('.','')}</span>
+                        </div>
+                    </div>
+                    <div class="card-body p-0">
+                        <pre class="bg-light p-3 m-0 border-0 rounded-0" style="max-height: 400px; overflow-y: auto; white-space: pre-wrap;">${result.transformed_content}</pre>
+                    </div>
+                    ${result.parse_error ? 
+                        `<div class="card-footer bg-warning text-dark">
+                            <small><strong>Warning:</strong> ${result.parse_error}</small>
+                         </div>` : ''}
+                </div>
+                
+                ${result.truncation_info && Object.keys(result.truncation_info).length > 0 ? 
+                    `<div class="alert alert-info">
+                        <strong>Document Truncation:</strong> Some content was truncated during processing.
+                        <button class="btn btn-sm btn-outline-info float-end" type="button" data-bs-toggle="collapse" data-bs-target="#truncationDetails">
+                            Details
+                        </button>
+                        <div class="collapse mt-2" id="truncationDetails">
+                            <div class="card card-body">
+                                <ul class="list-unstyled mb-0">
+                                    ${result.truncation_info.original_document_length ? 
+                                        `<li>Original document: ${result.truncation_info.original_document_length} chars → 
+                                         Processed: ${result.truncation_info.processed_document_length} chars</li>` : ''}
+                                    ${result.truncation_info.original_input_template_length ? 
+                                        `<li>Original input template: ${result.truncation_info.original_input_template_length} chars → 
+                                         Processed: ${result.truncation_info.processed_input_template_length} chars</li>` : ''}
+                                    ${result.truncation_info.original_output_template_length ? 
+                                        `<li>Original output template: ${result.truncation_info.original_output_template_length} chars → 
+                                         Processed: ${result.truncation_info.processed_output_template_length} chars</li>` : ''}
+                                    ${result.truncation_info.aggressive_truncation ? 
+                                        `<li><strong>Note:</strong> Aggressive truncation was applied due to content size.</li>` : ''}
+                                </ul>
+                            </div>
+                        </div>
+                    </div>` : ''}
+                
+                <div class="d-flex justify-content-end">
+                    <button type="button" class="btn btn-outline-primary btn-sm me-2" onclick="copyToClipboard('${encodeURIComponent(result.transformed_content)}')">
+                        <i class="bi bi-clipboard"></i> Copy to Clipboard
+                    </button>
+                    ${result.download_path ? 
+                        `<a href="${result.download_path}" class="btn btn-outline-success btn-sm" download>
+                            <i class="bi bi-download"></i> Download CSV
+                         </a>` : 
+                        `<button type="button" class="btn btn-outline-success btn-sm" onclick="downloadStringAsFile(decodeURIComponent('${encodeURIComponent(result.transformed_content)}'), 'transformed_content.csv', 'text/csv')">
+                            <i class="bi bi-download"></i> Download CSV
+                         </button>`}
+                </div>
+                
+                ${result.note ? `<div class="alert alert-info mt-3">${result.note}</div>` : ''}
+            `;
+            
+            // Re-enable the button
+            debugLog('Re-enabling transform button');
+            transformButton.disabled = false;
+            
+        } catch (innerError) {
+            debugLog('Error in transform API call', innerError);
+            console.error('Error transforming document:', innerError);
+            
+            if (resultsContent) {
+                resultsContent.innerHTML = `
+                    <div class="alert alert-danger">
+                        <strong>Error:</strong> ${innerError.message || 'Failed to transform document'}
+                    </div>
+                `;
+            }
+            
+            if (transformButton) {
+                transformButton.disabled = false;
+            }
+        }
+        
+    } catch (error) {
+        debugLog('Error getting DOM elements', error);
+        console.error('Error in transformDocument:', error);
+        alert(`Error in transform process: ${error.message}`);
+    }
+}
+
+// Functions moved to main.js
+</script>
+{% endblock %}

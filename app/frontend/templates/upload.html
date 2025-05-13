@@ -1,0 +1,182 @@
+{% extends "layout.html" %}
+
+{% block title %}Upload Document - RapidocsAI{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-10 offset-md-1">
+        <div class="card">
+            <div class="card-header">
+                <h2>Upload to RapidocsAI</h2>
+            </div>
+            <div class="card-body">
+                <form id="upload-form" enctype="multipart/form-data">
+                    <div class="p-3">
+                        <div class="mb-3">
+                            <label for="title" class="form-label">Document Title</label>
+                            <input type="text" class="form-control" id="title" name="title" required>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="description" class="form-label">Description</label>
+                            <textarea class="form-control" id="description" name="description" rows="3"></textarea>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="doc_type" class="form-label">Document Type</label>
+                            <select class="form-control" id="doc_type" name="doc_type" required>
+                                <option value="">Select a document type</option>
+                                <option value="repo">Deposition/Testimony</option>
+                            </select>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="file" class="form-label">Document File</label>
+                            <input type="file" class="form-control" id="file" name="file" accept=".pdf,.doc,.docx,.txt,.csv,.xlsx,.xls,.json" required>
+                            <div class="form-text">Supported file types: PDF, DOC, DOCX, TXT, CSV, Excel (XLSX/XLS), JSON. Maximum file size: 10MB.</div>
+                        </div>
+
+                        <div class="d-flex justify-content-between mt-4">
+                            <a href="/documents" class="btn btn-secondary">Cancel</a>
+                            <button type="submit" class="btn btn-primary" id="upload-button">Upload Document</button>
+                        </div>
+                    </div>
+                </form>
+                
+                <div class="mt-4 d-none" id="upload-progress-container">
+                    <h4>Uploading Document...</h4>
+                    <div class="progress">
+                        <div id="upload-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
+                    </div>
+                    <p class="text-muted mt-2" id="upload-status">Preparing upload...</p>
+                </div>
+                
+                <div class="mt-4 d-none" id="upload-success">
+                    <div class="alert alert-success">
+                        <h4 class="alert-heading">Document Uploaded Successfully!</h4>
+                        <p>Your document has been uploaded and is now being processed.</p>
+                        <hr>
+                        <div class="text-center">
+                            <a href="/documents" class="btn btn-primary">View All Documents</a>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mt-4 d-none" id="upload-error">
+                    <div class="alert alert-danger">
+                        <h4 class="alert-heading">Upload Failed</h4>
+                        <p id="error-message">An error occurred while uploading your document.</p>
+                        <hr>
+                        <button class="btn btn-primary" id="retry-button">Try Again</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', async function() {
+    // Check if user is logged in
+    const token = localStorage.getItem('auth_token');
+    if (!token) {
+        window.location.href = "/login";
+        return;
+    }
+    
+    // Get DOM elements
+    const form = document.getElementById('upload-form');
+    const uploadButton = document.getElementById('upload-button');
+    const progressContainer = document.getElementById('upload-progress-container');
+    const progressBar = document.getElementById('upload-progress-bar');
+    const statusText = document.getElementById('upload-status');
+    const successContainer = document.getElementById('upload-success');
+    const errorContainer = document.getElementById('upload-error');
+    const errorMessage = document.getElementById('error-message');
+    const retryButton = document.getElementById('retry-button');
+    
+    // Automatically select the repo option as it's the only option
+    const docTypeSelect = document.getElementById('doc_type');
+    if (docTypeSelect) {
+        docTypeSelect.value = 'repo';
+        docTypeSelect.disabled = true; // Disable the select to prevent changes
+    }
+    
+    let uploadedDocumentId = null;
+    
+    // Main document upload
+    form.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        // Reset state
+        uploadButton.disabled = true;
+        progressContainer.classList.remove('d-none');
+        successContainer.classList.add('d-none');
+        errorContainer.classList.add('d-none');
+        progressBar.style.width = '0%';
+        statusText.textContent = 'Preparing upload...';
+        
+        // Get form data
+        const formData = new FormData(form);
+        
+        try {
+            // Simulate progress (actual upload doesn't provide progress)
+            const progressInterval = setInterval(() => {
+                const currentWidth = parseInt(progressBar.style.width, 10);
+                if (currentWidth < 90) {
+                    progressBar.style.width = (currentWidth + 5) + '%';
+                    if (currentWidth < 30) {
+                        statusText.textContent = 'Uploading document...';
+                    } else if (currentWidth < 60) {
+                        statusText.textContent = 'Processing document...';
+                    } else {
+                        statusText.textContent = 'Finalizing upload...';
+                    }
+                }
+            }, 300);
+            
+            // Perform the upload
+            const response = await fetch('/documents/upload', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                },
+                body: formData
+            });
+            
+            clearInterval(progressInterval);
+            
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.detail || 'Upload failed');
+            }
+            
+            const data = await response.json();
+            uploadedDocumentId = data.id;
+            
+            // Show success
+            progressBar.style.width = '100%';
+            statusText.textContent = 'Upload complete!';
+            setTimeout(() => {
+                progressContainer.classList.add('d-none');
+                successContainer.classList.remove('d-none');
+            }, 500);
+            
+        } catch (error) {
+            console.error('Upload error:', error);
+            progressContainer.classList.add('d-none');
+            errorContainer.classList.remove('d-none');
+            errorMessage.textContent = error.message || 'An error occurred during upload.';
+            uploadButton.disabled = false;
+        }
+    });
+    
+    retryButton.addEventListener('click', function() {
+        errorContainer.classList.add('d-none');
+        uploadButton.disabled = false;
+    });
+});
+</script>
+{% endblock %}

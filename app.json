@@ -1,0 +1,66 @@
+{
+  "name": "RapidocsAI",
+  "description": "AI-powered document analysis, storage and management platform",
+  "repository": "https://github.com/yourusername/rapidocs",
+  "keywords": ["python", "fastapi", "ai", "documents", "nlp"],
+  "website": "",
+  "success_url": "/",
+  "env": {
+    "JWT_SECRET_KEY": {
+      "description": "A secret key for JWT token generation",
+      "generator": "secret"
+    },
+    "USE_S3_STORAGE": {
+      "description": "Set to true to use S3 for file storage (required for Heroku)",
+      "value": "true"
+    },
+    "ENVIRONMENT": {
+      "description": "Application environment (development or production)",
+      "value": "production"
+    },
+    "AWS_ACCESS_KEY_ID": {
+      "description": "AWS Access Key ID for S3 access"
+    },
+    "AWS_SECRET_ACCESS_KEY": {
+      "description": "AWS Secret Access Key for S3 access"
+    },
+    "AWS_REGION": {
+      "description": "AWS Region for S3 bucket",
+      "value": "us-east-1"
+    },
+    "S3_BUCKET_NAME": {
+      "description": "S3 bucket name for file storage"
+    },
+    "OPENAI_API_KEY": {
+      "description": "OpenAI API key for AI processing"
+    },
+    "OPENAI_MODEL": {
+      "description": "OpenAI model to use",
+      "value": "gpt-4o"
+    },
+    "OPENAI_TEMPERATURE": {
+      "description": "Temperature parameter for OpenAI model",
+      "value": "0.3"
+    },
+    "LOG_LEVEL": {
+      "description": "Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)",
+      "value": "INFO"
+    }
+  },
+  "addons": [
+    {
+      "plan": "heroku-postgresql:mini",
+      "options": {
+        "version": "14"
+      }
+    }
+  ],
+  "buildpacks": [
+    {
+      "url": "heroku/python"
+    }
+  ],
+  "scripts": {
+    "postdeploy": "python -m alembic upgrade head"
+  }
+}

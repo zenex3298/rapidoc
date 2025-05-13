@@ -1,0 +1,180 @@
+{% extends "layout.html" %}
+
+{% block title %}Upload Template - RapidocsAI{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8 offset-md-2">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h2>Upload Template Document</h2>
+                <p class="mb-0">Template documents will be used for analysis but won't appear in your regular document list</p>
+            </div>
+            <div class="card-body">
+                <form id="upload-form" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label for="title" class="form-label">Template Title</label>
+                        <input type="text" class="form-control" id="title" name="title" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="description" class="form-label">Description</label>
+                        <textarea class="form-control" id="description" name="description" rows="3"></textarea>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="doc_type" class="form-label">Document Type</label>
+                        <select class="form-control" id="doc_type" name="doc_type" required>
+                            <option value="">Select a document type</option>
+                            <option value="legal">Legal Document</option>
+                            <option value="real_estate">Real Estate Document</option>
+                            <option value="contract">Contract</option>
+                            <option value="lease">Lease Agreement</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                    
+                    <!-- Hidden tag field always set to "template" -->
+                    <input type="hidden" id="tag" name="tag" value="template">
+                    
+                    <div class="mb-3">
+                        <label for="file" class="form-label">Template File</label>
+                        <input type="file" class="form-control" id="file" name="file" accept=".pdf,.doc,.docx,.txt,.csv,.xlsx,.xls,.json" required>
+                        <div class="form-text">Supported file types: PDF, DOC, DOCX, TXT, CSV, Excel (XLSX/XLS), JSON. Maximum file size: 10MB.</div>
+                    </div>
+                    
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary" id="upload-button">Upload Template</button>
+                        <a href="/templates" class="btn btn-secondary">Cancel</a>
+                    </div>
+                </form>
+                
+                <div class="mt-4 d-none" id="upload-progress-container">
+                    <h4>Uploading Template...</h4>
+                    <div class="progress">
+                        <div id="upload-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
+                    </div>
+                    <p class="text-muted mt-2" id="upload-status">Preparing upload...</p>
+                </div>
+                
+                <div class="mt-4 d-none" id="upload-success">
+                    <div class="alert alert-success">
+                        <h4 class="alert-heading">Template Uploaded Successfully!</h4>
+                        <p>Your template document has been uploaded and is now being processed.</p>
+                        <hr>
+                        <div class="d-flex justify-content-between">
+                            <a href="/templates" class="btn btn-primary">View Templates</a>
+                            <a href="/template-upload" class="btn btn-success">Upload Another Template</a>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mt-4 d-none" id="upload-error">
+                    <div class="alert alert-danger">
+                        <h4 class="alert-heading">Upload Failed</h4>
+                        <p id="error-message">An error occurred while uploading your template document.</p>
+                        <hr>
+                        <button class="btn btn-primary" id="retry-button">Try Again</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Check if user is logged in
+    const token = localStorage.getItem('auth_token');
+    if (!token) {
+        window.location.href = "/login";
+        return;
+    }
+    
+    const form = document.getElementById('upload-form');
+    const uploadButton = document.getElementById('upload-button');
+    const progressContainer = document.getElementById('upload-progress-container');
+    const progressBar = document.getElementById('upload-progress-bar');
+    const statusText = document.getElementById('upload-status');
+    const successContainer = document.getElementById('upload-success');
+    const errorContainer = document.getElementById('upload-error');
+    const errorMessage = document.getElementById('error-message');
+    const retryButton = document.getElementById('retry-button');
+    
+    let uploadedDocumentId = null;
+    
+    form.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        // Reset state
+        uploadButton.disabled = true;
+        progressContainer.classList.remove('d-none');
+        successContainer.classList.add('d-none');
+        errorContainer.classList.add('d-none');
+        progressBar.style.width = '0%';
+        statusText.textContent = 'Preparing upload...';
+        
+        // Get form data
+        const formData = new FormData(form);
+        
+        try {
+            // Simulate progress (actual upload doesn't provide progress)
+            const progressInterval = setInterval(() => {
+                const currentWidth = parseInt(progressBar.style.width, 10);
+                if (currentWidth < 90) {
+                    progressBar.style.width = (currentWidth + 5) + '%';
+                    if (currentWidth < 30) {
+                        statusText.textContent = 'Uploading template...';
+                    } else if (currentWidth < 60) {
+                        statusText.textContent = 'Processing template...';
+                    } else {
+                        statusText.textContent = 'Analyzing content...';
+                    }
+                }
+            }, 300);
+            
+            // Perform the upload to the same endpoint but with tag=template
+            const response = await fetch('/documents/upload', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                },
+                body: formData
+            });
+            
+            clearInterval(progressInterval);
+            
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.detail || 'Upload failed');
+            }
+            
+            const data = await response.json();
+            uploadedDocumentId = data.id;
+            
+            // Show success
+            progressBar.style.width = '100%';
+            statusText.textContent = 'Upload complete!';
+            setTimeout(() => {
+                progressContainer.classList.add('d-none');
+                successContainer.classList.remove('d-none');
+            }, 500);
+            
+        } catch (error) {
+            console.error('Upload error:', error);
+            progressContainer.classList.add('d-none');
+            errorContainer.classList.remove('d-none');
+            errorMessage.textContent = error.message || 'An error occurred during upload.';
+            uploadButton.disabled = false;
+        }
+    });
+    
+    retryButton.addEventListener('click', function() {
+        errorContainer.classList.add('d-none');
+        uploadButton.disabled = false;
+    });
+});
+</script>
+{% endblock %}
