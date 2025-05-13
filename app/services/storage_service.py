@@ -18,7 +18,10 @@ class S3StorageService:
             region_name=os.getenv('AWS_REGION', 'us-east-1')
         )
         self.bucket_name = os.getenv('S3_BUCKET_NAME') or os.getenv('S3_BUCKET')
-        logger.info(f"S3StorageService initialized with bucket: {self.bucket_name}")
+        if not self.bucket_name:
+            logger.warning("S3StorageService initialized without a bucket name. Check S3_BUCKET_NAME environment variable.")
+        else:
+            logger.info(f"S3StorageService initialized with bucket: {self.bucket_name}")
     
     def upload_file(self, file_content: bytes, object_key: str) -> Dict[str, Any]:
         """
@@ -31,6 +34,13 @@ class S3StorageService:
         Returns:
             Dict with upload result information
         """
+        if not self.bucket_name:
+            logger.error("Cannot upload file: S3 bucket name not configured. Check S3_BUCKET_NAME environment variable.")
+            return {
+                "success": False,
+                "error": "S3 bucket name not configured"
+            }
+            
         try:
             response = self.s3_client.put_object(
                 Body=file_content,
@@ -64,6 +74,13 @@ class S3StorageService:
         Returns:
             Dict with upload result information
         """
+        if not self.bucket_name:
+            logger.error("Cannot upload text file: S3 bucket name not configured. Check S3_BUCKET_NAME environment variable.")
+            return {
+                "success": False,
+                "error": "S3 bucket name not configured"
+            }
+            
         try:
             response = self.s3_client.put_object(
                 Body=text_content,
@@ -97,6 +114,11 @@ class S3StorageService:
         Returns:
             Presigned URL for the file
         """
+        if not self.bucket_name:
+            error_msg = "Cannot generate URL: S3 bucket name not configured. Check S3_BUCKET_NAME environment variable."
+            logger.error(error_msg)
+            raise Exception(error_msg)
+            
         try:
             url = self.s3_client.generate_presigned_url(
                 'get_object',
@@ -119,6 +141,13 @@ class S3StorageService:
         Returns:
             Dict with deletion result
         """
+        if not self.bucket_name:
+            logger.error("Cannot delete file: S3 bucket name not configured. Check S3_BUCKET_NAME environment variable.")
+            return {
+                "success": False,
+                "error": "S3 bucket name not configured"
+            }
+            
         try:
             response = self.s3_client.delete_object(
                 Bucket=self.bucket_name,

@@ -52,7 +52,7 @@ load_dotenv()
 # Configure S3 if enabled via environment variable
 use_s3 = os.getenv('USE_S3_STORAGE', 'false').lower() == 'true'
 s3_client = None
-s3_bucket = os.getenv('S3_BUCKET')
+s3_bucket = os.getenv('S3_BUCKET_NAME') or os.getenv('S3_BUCKET')
 
 if use_s3:
     if not BOTO3_AVAILABLE:
@@ -64,7 +64,10 @@ if use_s3:
                 aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
                 region_name=os.getenv('AWS_REGION', 'us-east-1')
             )
-            logger.info(f"S3 client initialized for bucket: {s3_bucket}")
+            if s3_bucket:
+                logger.info(f"S3 client initialized for bucket: {s3_bucket}")
+            else:
+                logger.warning("S3 client initialized but no bucket name found in S3_BUCKET_NAME or S3_BUCKET environment variables")
         except Exception as e:
             logger.error(f"Failed to initialize S3 client: {e}")
             s3_client = None
@@ -133,6 +136,10 @@ class DocumentProcessor:
         if use_s3 and s3_client:
             # Save to S3
             try:
+                # Check if bucket name is configured
+                if not s3_bucket:
+                    raise ValueError("S3 bucket name not configured. Check S3_BUCKET_NAME environment variable.")
+                    
                 object_key = f"{user_dir}/{safe_filename}"
                 s3_client.put_object(
                     Bucket=s3_bucket,
@@ -186,6 +193,10 @@ class DocumentProcessor:
         if use_s3 and s3_client:
             # Save to S3
             try:
+                # Check if bucket name is configured
+                if not s3_bucket:
+                    raise ValueError("S3 bucket name not configured. Check S3_BUCKET_NAME environment variable.")
+                    
                 object_key = f"{user_dir}/{safe_filename}"
                 s3_client.put_object(
                     Bucket=s3_bucket,
@@ -228,6 +239,10 @@ class DocumentProcessor:
         if use_s3 and s3_client and not os.path.exists(file_path):
             # File is in S3
             try:
+                # Check if bucket name is configured
+                if not s3_bucket:
+                    raise ValueError("S3 bucket name not configured. Check S3_BUCKET_NAME environment variable.")
+                    
                 response = s3_client.get_object(
                     Bucket=s3_bucket,
                     Key=file_path
@@ -403,6 +418,10 @@ class DocumentProcessor:
         if use_s3 and s3_client and not os.path.exists(file_path):
             # Get file size from S3
             try:
+                # Check if bucket name is configured
+                if not s3_bucket:
+                    raise ValueError("S3 bucket name not configured. Check S3_BUCKET_NAME environment variable.")
+                    
                 response = s3_client.head_object(
                     Bucket=s3_bucket,
                     Key=file_path
