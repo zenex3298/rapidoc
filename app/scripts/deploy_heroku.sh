@@ -22,11 +22,10 @@ fi
 # Check for required environment variables
 echo "Checking for required environment variables..."
 
-# Create .env if it doesn't exist
+# Check for .env file
 if [ ! -f .env ]; then
-    echo "Creating .env file from sample.env..."
-    cp sample.env .env
-    echo "Please open .env and fill in the required values."
+    echo "ERROR: .env file not found!"
+    echo "Please make sure you have a .env file with all required environment variables."
     exit 1
 fi
 
@@ -51,9 +50,9 @@ if [ $MISSING_VARS -eq 1 ]; then
     exit 1
 fi
 
-# Ask for app name
-read -p "Enter Heroku app name (default: rapidocsai): " APP_NAME
-APP_NAME=${APP_NAME:-rapidocsai}
+# Set app name without prompt
+APP_NAME="rapidocsai"
+echo "Using Heroku app name: $APP_NAME"
 
 # Create Heroku app
 echo "Creating Heroku app: $APP_NAME..."
@@ -81,14 +80,8 @@ heroku config:set LOG_LEVEL="${LOG_LEVEL:-INFO}" --app $APP_NAME
 echo "Setting Heroku Git remote..."
 heroku git:remote -a $APP_NAME
 
-# Ask to deploy
-read -p "Ready to deploy to Heroku. Continue? (y/n): " DEPLOY
-if [[ $DEPLOY != "y" && $DEPLOY != "Y" ]]; then
-    echo "Deployment canceled. You can deploy later with these commands:"
-    echo "  git push heroku master"
-    echo "  heroku run python -m alembic upgrade head"
-    exit 0
-fi
+# Automatically deploy without prompt
+echo "Automatically deploying to Heroku..."
 
 # Push to Heroku
 echo "Deploying to Heroku..."
