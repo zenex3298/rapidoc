@@ -19,3 +19,4 @@ openpyxl==3.1.2
 pyarrow==15.0.2
 boto3==1.37.8  # AWS S3 SDK
 psycopg2-binary==2.9.9  # PostgreSQL adapter
+redis==5.0.3  # For job queue system

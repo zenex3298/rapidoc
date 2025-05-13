@@ -28,6 +28,53 @@ class DocumentService:
     """Service for document processing and management"""
     
     @staticmethod
+    def _save_transformed_file(
+        db: Session,
+        file_content: str,
+        file_type: str,
+        original_document_title: str,
+        user_id: int
+    ) -> str:
+        """Save a transformed file and track it in the database.
+        
+        Args:
+            db: Database session
+            file_content: The file content as string
+            file_type: The file type/extension (without the dot)
+            original_document_title: Title of the original document
+            user_id: ID of the user performing the transformation
+            
+        Returns:
+            str: Path where the file is saved
+        """
+        # Use the document processor to save the file
+        file_path = document_processor.save_transformed_file(
+            file_content=file_content,
+            file_type=file_type,
+            original_document_title=original_document_title,
+            user_id=user_id
+        )
+        
+        # Create a new document record for the transformed file
+        transformed_document = Document(
+            user_id=user_id,
+            title=f"Transformed: {original_document_title}",
+            description=f"Transformed version of document: {original_document_title}",
+            doc_type="transformed",
+            status="processed",
+            file_path=file_path,
+            file_content=file_content,
+            original_filename=f"{original_document_title}_transformed.{file_type}"
+        )
+        
+        db.add(transformed_document)
+        db.commit()
+        db.refresh(transformed_document)
+        
+        logger.info(f"Saved transformed document: {transformed_document.id}")
+        return file_path
+    
+    @staticmethod
     def process_document(
         db: Session,
         file: UploadFile,

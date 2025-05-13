@@ -52,7 +52,7 @@ app.add_middleware(
 Base.metadata.create_all(bind=engine)
 
 # Import and include routers
-from app.routes import auth_router, users_router, documents_router, admin_router
+from app.routes import auth_router, users_router, documents_router, admin_router, jobs_router
 from app.frontend import frontend_router, static_path
 from fastapi.staticfiles import StaticFiles
 
@@ -64,6 +64,7 @@ app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(documents_router)
 app.include_router(admin_router)
+app.include_router(jobs_router)
 
 # Include frontend router
 app.include_router(frontend_router)

@@ -8,6 +8,7 @@ import os
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 from app.services.storage_service import S3StorageService
+from app.services.job_queue_service import job_queue_service
 from app.utils.performance_logger import api_perf_logger
 
 from app.core.database import get_db
@@ -250,8 +251,8 @@ async def transform_document_with_templates(
     - A template input document (similar format to the input document)
     - A template output document (desired format for the output)
     
-    The service will process these documents and return a transformed version
-    of the input document formatted like the template output.
+    The transformation will be performed asynchronously and a job ID will be returned.
+    Use the /jobs/{job_id} endpoint to check the status of the job and retrieve the result.
     """
     timer_id = api_perf_logger.start_timer("transform_document_with_templates", {
         "user_id": current_user.id,
@@ -288,60 +289,55 @@ async def transform_document_with_templates(
             logger.warning(f"Document {template_output_id} is not a template")
             raise HTTPException(status_code=400, detail="The output template document is not tagged as a template")
         
-        # Perform the transformation
-        logger.info(f"Calling transform_document_with_templates service method")
-        result = document_service.transform_document_with_templates(
-            db=db,
-            document=document,
-            template_input=template_input,
-            template_output=template_output,
-            user_id=current_user.id
+        # Add the transformation job to the queue
+        logger.info(f"Enqueueing transformation job")
+        job_data = job_queue_service.enqueue_transformation_job(
+            user_id=current_user.id,
+            document_id=document_id,
+            template_input_id=template_input_id,
+            template_output_id=template_output_id
         )
         
-        # Handle different result status types
-        if result.get("status") == "retry_required":
-            processing_time = time.time() - start_time
-            api_perf_logger.stop_timer(timer_id, {
-                "status": "retry_required",
-                "processing_time": processing_time
-            })
-            
-            # Return a specific status code for retry requests
-            response = JSONResponse(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                content={
-                    "status": "retry_required",
-                    "message": result.get("message", "Document too complex for synchronous processing"),
-                    "detail": result.get("error", "Processing time limit exceeded"),
-                    "document_id": document_id
-                }
-            )
-            return response
+        # Log the activity
+        log_activity(
+            db=db,
+            action="document_transformation_queued",
+            user_id=current_user.id,
+            description=f"Document transformation queued: {document.title}",
+            details={
+                "document_id": document_id,
+                "template_input_id": template_input_id,
+                "template_output_id": template_output_id,
+                "job_id": job_data["job_id"]
+            }
+        )
         
-        # Check if there was a timeout warning
-        if result.get("timeout_warning"):
-            # Set header to indicate timeout
-            processing_time = time.time() - start_time
-            api_perf_logger.stop_timer(timer_id, {
-                "status": "timeout_warning",
-                "processing_time": processing_time
-            })
-            
-            # Return with a timeout warning header
-            response = JSONResponse(content=result)
-            response.headers["X-Processing-Status"] = "timeout"
-            response.headers["X-Processing-Warning"] = result.get("timeout_warning")
-            return response
-        
-        # Normal successful response
+        # Return the job information
         processing_time = time.time() - start_time
         api_perf_logger.stop_timer(timer_id, {
-            "status": "success",
-            "processing_time": processing_time
+            "status": "job_queued",
+            "processing_time": processing_time,
+            "job_id": job_data["job_id"]
         })
         
-        logger.info(f"Transformation completed successfully in {processing_time:.2f}s")
-        return result
+        logger.info(f"Transformation job queued: {job_data['job_id']}")
+        
+        # Return a response with the job information
+        response = {
+            "status": "queued",
+            "message": "Document transformation job has been queued",
+            "job_id": job_data["job_id"],
+            "document_id": document_id,
+            "document_title": document.title,
+            "template_input_id": template_input_id,
+            "template_input_title": template_input.title,
+            "template_output_id": template_output_id,
+            "template_output_title": template_output.title,
+            "check_status_url": f"/jobs/{job_data['job_id']}",
+            "created_at": job_data["created_at"]
+        }
+        
+        return response
         
     except HTTPException as he:
         logger.error(f"HTTP exception in transform_document_with_templates: {he.detail}")
