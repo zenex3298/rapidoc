@@ -97,11 +97,68 @@ document.addEventListener('DOMContentLoaded', async function() {
     const errorMessage = document.getElementById('error-message');
     const retryButton = document.getElementById('retry-button');
     
+    // Create debug container
+    const debugContainer = document.createElement('div');
+    debugContainer.id = 'debug-container';
+    debugContainer.className = 'mt-4 border p-3 bg-light d-none';
+    debugContainer.innerHTML = `
+        <h5>Debug Information</h5>
+        <div id="debug-content" class="small"></div>
+    `;
+    document.querySelector('.card-body').appendChild(debugContainer);
+    
+    // Debug log function
+    function debugLog(message, data = null) {
+        const debugContent = document.getElementById('debug-content');
+        const timestamp = new Date().toISOString();
+        let logEntry = `<div class="debug-entry">[${timestamp}] ${message}</div>`;
+        
+        if (data) {
+            // Format data differently based on type
+            let formattedData;
+            try {
+                if (typeof data === 'object') {
+                    formattedData = JSON.stringify(data, null, 2);
+                } else {
+                    formattedData = String(data);
+                }
+                logEntry += `<pre class="small bg-dark text-light p-2 mt-1 mb-3" style="max-height: 200px; overflow-y: auto;">${formattedData}</pre>`;
+            } catch (e) {
+                logEntry += `<pre class="small bg-dark text-light p-2 mt-1 mb-3">Error formatting data: ${e.message}</pre>`;
+            }
+        }
+        
+        debugContent.innerHTML = logEntry + debugContent.innerHTML;
+        debugContainer.classList.remove('d-none');
+    }
+    
+    // Add debug toggle button
+    const debugButton = document.createElement('button');
+    debugButton.type = 'button';
+    debugButton.className = 'btn btn-sm btn-outline-info ms-2';
+    debugButton.textContent = 'Toggle Debug';
+    debugButton.addEventListener('click', function() {
+        debugContainer.classList.toggle('d-none');
+    });
+    document.querySelector('.d-flex.justify-content-between.mt-4').appendChild(debugButton);
+    
     // Automatically select the repo option as it's the only option
     const docTypeSelect = document.getElementById('doc_type');
     if (docTypeSelect) {
         docTypeSelect.value = 'repo';
-        docTypeSelect.disabled = true; // Disable the select to prevent changes
+        // Instead of disabling the select (which prevents it from being submitted),
+        // make it readonly using attributes and styling
+        docTypeSelect.setAttribute('readonly', 'readonly');
+        docTypeSelect.style.backgroundColor = '#e9ecef';
+        docTypeSelect.style.cursor = 'not-allowed';
+        // We'll also add a hidden input as a backup to ensure doc_type is sent
+        const hiddenDocType = document.createElement('input');
+        hiddenDocType.type = 'hidden';
+        hiddenDocType.name = 'doc_type';
+        hiddenDocType.value = 'repo';
+        docTypeSelect.parentNode.appendChild(hiddenDocType);
+        
+        debugLog('Document type set to repo', { element: 'docTypeSelect', value: 'repo', hiddenBackup: true });
     }
     
     let uploadedDocumentId = null;
@@ -109,6 +166,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Main document upload
     form.addEventListener('submit', async function(e) {
         e.preventDefault();
+        debugLog('Form submitted');
         
         // Reset state
         uploadButton.disabled = true;
@@ -120,6 +178,27 @@ document.addEventListener('DOMContentLoaded', async function() {
         
         // Get form data
         const formData = new FormData(form);
+        
+        // Double-check that doc_type is included in the form data
+        if (!formData.has('doc_type')) {
+            debugLog('doc_type missing from FormData, adding manually', { value: 'repo' });
+            formData.append('doc_type', 'repo');
+        }
+        
+        // Log form data for debugging
+        const formDataEntries = {};
+        for (let [key, value] of formData.entries()) {
+            if (key === 'file') {
+                formDataEntries[key] = {
+                    name: value.name,
+                    type: value.type,
+                    size: value.size
+                };
+            } else {
+                formDataEntries[key] = value;
+            }
+        }
+        debugLog('Form data prepared', formDataEntries);
         
         try {
             // Simulate progress (actual upload doesn't provide progress)
@@ -137,6 +216,8 @@ document.addEventListener('DOMContentLoaded', async function() {
                 }
             }, 300);
             
+            debugLog('Starting fetch request to /documents/upload');
+            
             // Perform the upload
             const response = await fetch('/documents/upload', {
                 method: 'POST',
@@ -148,12 +229,41 @@ document.addEventListener('DOMContentLoaded', async function() {
             
             clearInterval(progressInterval);
             
+            debugLog('Fetch response received', {
+                status: response.status,
+                statusText: response.statusText,
+                headers: Object.fromEntries([...response.headers.entries()]),
+                ok: response.ok
+            });
+            
             if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.detail || 'Upload failed');
+                let responseText;
+                try {
+                    responseText = await response.text();
+                    debugLog('Response text', responseText);
+                    
+                    // Try to parse as JSON
+                    try {
+                        const errorData = JSON.parse(responseText);
+                        debugLog('Parsed error data', errorData);
+                        throw errorData;
+                    } catch (jsonError) {
+                        debugLog('JSON parse error', jsonError);
+                        // If we can't parse JSON, throw response text or status
+                        if (responseText) {
+                            throw new Error(`Upload failed: ${responseText}`);
+                        } else {
+                            throw new Error(`Upload failed: ${response.status} ${response.statusText}`);
+                        }
+                    }
+                } catch (textError) {
+                    debugLog('Failed to get response text', textError);
+                    throw new Error(`Upload failed: ${response.status} ${response.statusText}`);
+                }
             }
             
             const data = await response.json();
+            debugLog('Success response data', data);
             uploadedDocumentId = data.id;
             
             // Show success
@@ -165,15 +275,70 @@ document.addEventListener('DOMContentLoaded', async function() {
             }, 500);
             
         } catch (error) {
+            debugLog('Upload error caught', {
+                message: error.message,
+                stack: error.stack, 
+                errorObj: error instanceof Error ? 
+                    { name: error.name, message: error.message } : 
+                    error
+            });
+            
             console.error('Upload error:', error);
             progressContainer.classList.add('d-none');
             errorContainer.classList.remove('d-none');
-            errorMessage.textContent = error.message || 'An error occurred during upload.';
+            
+            // Properly handle different error types
+            if (error.message) {
+                // If error is an Error object with a message property
+                errorMessage.textContent = error.message;
+                debugLog('Error has message property', error.message);
+            } else if (typeof error === 'string') {
+                // If error is a string
+                errorMessage.textContent = error;
+                debugLog('Error is string', error);
+            } else if (error.detail) {
+                // If error is a response object with detail property
+                errorMessage.textContent = error.detail;
+                debugLog('Error has detail property', error.detail);
+            } else if (error.status && error.message) {
+                // If error is a structured error response
+                errorMessage.textContent = `${error.message} (${error.status})`;
+                debugLog('Error has status and message', { status: error.status, message: error.message });
+            } else if (error.error) {
+                // Some APIs return errors in an error property
+                errorMessage.textContent = error.error;
+                debugLog('Error has error property', error.error);
+            } else {
+                // Fallback message with whatever we can find
+                const errorText = JSON.stringify(error);
+                errorMessage.textContent = errorText !== '{}' ? 
+                    `Error: ${errorText.substring(0, 100)}` : 
+                    'An unknown error occurred during upload.';
+                debugLog('Error fallback', errorText);
+            }
+            
             uploadButton.disabled = false;
         }
     });
     
+    // Add network info
+    navigator.connection && debugLog('Network information', {
+        effectiveType: navigator.connection.effectiveType,
+        downlink: navigator.connection.downlink,
+        rtt: navigator.connection.rtt,
+        saveData: navigator.connection.saveData
+    });
+    
+    // Add browser info
+    debugLog('Browser information', {
+        userAgent: navigator.userAgent,
+        platform: navigator.platform,
+        vendor: navigator.vendor,
+        language: navigator.language
+    });
+    
     retryButton.addEventListener('click', function() {
+        debugLog('Retry button clicked');
         errorContainer.classList.add('d-none');
         uploadButton.disabled = false;
     });
