@@ -208,6 +208,8 @@ GET /documents/{document_id}/analysis
 POST /documents/{document_id}/transform-with-templates
 ```
 
+The transformation is performed asynchronously, and the endpoint returns a job ID that can be used to check the status of the transformation.
+
 **Path Parameters:**
 | Parameter | Type | Description |
 |-----------|------|-------------|
@@ -224,22 +226,141 @@ POST /documents/{document_id}/transform-with-templates
 **Response:**
 ```json
 {
-  "status": "success",
+  "status": "queued",
+  "message": "Document transformation job has been queued",
+  "job_id": "550e8400-e29b-41d4-a716-446655440000",
   "document_id": 1,
   "document_title": "Source Document",
   "template_input_id": 2,
   "template_input_title": "Input Template",
   "template_output_id": 3,
   "template_output_title": "Output Template",
-  "transformed_content": "This is the transformed content based on the templates...",
-  "timestamp": "2025-05-01T11:15:00",
-  "formats": {
-    "document": ".pdf",
-    "template_input": ".pdf",
-    "template_output": ".csv",
-    "output": ".csv"
+  "check_status_url": "/jobs/550e8400-e29b-41d4-a716-446655440000",
+  "created_at": "2025-05-01T11:15:00"
+}
+```
+
+## Job Management
+
+Document transformations and other long-running tasks are processed asynchronously in the background. The API provides endpoints to check the status of these jobs and retrieve their results.
+
+### List Jobs
+
+```
+GET /jobs/
+```
+
+List jobs for the current user.
+
+**Query Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| limit | Integer | No | Maximum number of jobs to return (default: 10) |
+
+**Response:**
+```json
+[
+  {
+    "job_id": "550e8400-e29b-41d4-a716-446655440000",
+    "user_id": 1,
+    "document_id": 1,
+    "template_input_id": 2,
+    "template_output_id": 3,
+    "status": "completed",
+    "created_at": "2025-05-01T11:15:00",
+    "updated_at": "2025-05-01T11:16:30"
   },
-  "message": "Document transformation completed"
+  {
+    "job_id": "660e8400-e29b-41d4-a716-446655440001",
+    "user_id": 1,
+    "document_id": 4,
+    "template_input_id": 2,
+    "template_output_id": 3,
+    "status": "processing",
+    "created_at": "2025-05-01T11:20:00",
+    "updated_at": "2025-05-01T11:20:05"
+  }
+]
+```
+
+### Get Job Status
+
+```
+GET /jobs/{job_id}
+```
+
+Get the status and result of a specific job.
+
+**Path Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| job_id | String | ID of the job to check |
+
+**Response for a queued or processing job:**
+```json
+{
+  "job_id": "550e8400-e29b-41d4-a716-446655440000",
+  "user_id": 1,
+  "document_id": 1,
+  "template_input_id": 2,
+  "template_output_id": 3,
+  "status": "processing",
+  "created_at": "2025-05-01T11:15:00",
+  "updated_at": "2025-05-01T11:15:30"
+}
+```
+
+**Response for a completed job:**
+```json
+{
+  "job_id": "550e8400-e29b-41d4-a716-446655440000",
+  "user_id": 1,
+  "document_id": 1,
+  "template_input_id": 2,
+  "template_output_id": 3,
+  "status": "completed",
+  "created_at": "2025-05-01T11:15:00",
+  "updated_at": "2025-05-01T11:16:30",
+  "result": {
+    "status": "success",
+    "document_id": 1,
+    "document_title": "Source Document",
+    "template_input_id": 2,
+    "template_input_title": "Input Template",
+    "template_output_id": 3,
+    "template_output_title": "Output Template",
+    "transformed_content": "This is the transformed content based on the templates...",
+    "download_path": "/documents/downloads/transformed_789.csv",
+    "timestamp": "2025-05-01T11:16:30",
+    "formats": {
+      "document": ".pdf",
+      "template_input": ".pdf",
+      "template_output": ".csv",
+      "output": ".csv"
+    },
+    "file_type": "csv",
+    "message": "Document transformation completed"
+  }
+}
+```
+
+**Response for a failed job:**
+```json
+{
+  "job_id": "550e8400-e29b-41d4-a716-446655440000",
+  "user_id": 1,
+  "document_id": 1,
+  "template_input_id": 2,
+  "template_output_id": 3,
+  "status": "error",
+  "created_at": "2025-05-01T11:15:00",
+  "updated_at": "2025-05-01T11:16:30",
+  "result": {
+    "error": "Error message",
+    "document_id": 1,
+    "document_title": "Source Document",
+    "message": "Error during document transformation"
+  }
 }
 ```
 

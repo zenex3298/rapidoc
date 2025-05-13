@@ -43,29 +43,43 @@ Follow these steps for a successful Heroku deployment:
    - Configure all environment variables through Heroku config vars
    - Must set: DATABASE_URL, JWT_SECRET_KEY, OPENAI_API_KEY, etc.
    - For S3 storage: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION, S3_BUCKET_NAME, USE_S3_STORAGE=true
+   - Redis configuration provided by REDIS_URL (added automatically by Redis add-on)
 
 2. **Database Configuration**
    - Add PostgreSQL addon: `heroku addons:create heroku-postgresql:mini`
    - Configure DATABASE_URL automatically
    - Run migrations after deployment: `heroku run python -m alembic upgrade head`
+   
+3. **Redis Configuration**
+   - Add Redis addon: `heroku addons:create heroku-redis:hobby-dev`
+   - This automatically sets the REDIS_URL environment variable
+   - Required for background job processing system
 
-3. **File Storage Configuration**
+4. **File Storage Configuration**
    - Must set USE_S3_STORAGE=true for production
    - Configure proper AWS credentials and S3 bucket
    - All file uploads go to S3 instead of ephemeral filesystem
 
-4. **Logging Configuration**
+5. **Logging Configuration**
    - Logs go to stdout/stderr in production
    - Configure LOG_LEVEL if needed (defaults to INFO)
    - Use `heroku logs --tail` to monitor application logs
 
-5. **Deployment Steps**
+6. **Worker Configuration**
+   - Scale worker dyno to at least 1: `heroku ps:scale worker=1`
+   - Worker processes document transformations in the background
+   - This allows transformations to run longer than the 30-second HTTP request timeout
+
+7. **Deployment Steps**
    ```bash
    # Create Heroku app
    heroku create rapidocsai
 
    # Add PostgreSQL addon
    heroku addons:create heroku-postgresql:mini
+
+   # Add Redis addon
+   heroku addons:create heroku-redis:hobby-dev
 
    # Configure environment variables
    heroku config:set JWT_SECRET_KEY=your_secure_jwt_secret
@@ -83,11 +97,14 @@ Follow these steps for a successful Heroku deployment:
    # Run database migrations
    heroku run python -m alembic upgrade head
 
+   # Scale the worker dyno
+   heroku ps:scale worker=1
+
    # Check logs
    heroku logs --tail
    ```
 
-6. **Maintenance and Monitoring**
+8. **Maintenance and Monitoring**
    - Monitor application logs: `heroku logs --tail`
    - Check app status: `heroku ps`
    - Access PostgreSQL: `heroku pg:psql`
