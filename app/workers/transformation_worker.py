@@ -156,12 +156,14 @@ def process_transformation_job(job_data: Dict[str, Any]) -> None:
                     file_type = transformation_result.get("file_type", template_output_ext.lstrip("."))
                     transformed_content = transformation_result.get("content", "No content provided")
                     truncation_info = transformation_result.get("truncation_info", {})
+                    chunking_info = transformation_result.get("chunking_info", {})
                     parse_error = transformation_result.get("parse_error", None)
                 else:
                     # Fallback if the result isn't a dict for some reason
                     file_type = template_output_ext.lstrip(".")
                     transformed_content = str(transformation_result)
                     truncation_info = {}
+                    chunking_info = {}
                     parse_error = "Unexpected response format"
                 
                 # Save the transformed content as a file with the appropriate extension
@@ -200,6 +202,11 @@ def process_transformation_job(job_data: Dict[str, Any]) -> None:
                     "truncation_info": truncation_info
                 }
                 
+                # Add chunking info if document was processed in chunks
+                if chunking_info:
+                    result["chunking_info"] = chunking_info
+                    result["message"] = "Document transformation completed (processed in chunks)"
+                
                 # Add file path if the file was saved successfully
                 if transformed_file_path:
                     # Generate a secure download URL
@@ -226,21 +233,31 @@ def process_transformation_job(job_data: Dict[str, Any]) -> None:
                     result["parse_error"] = parse_error
                 
                 # Log the transformation action
+                activity_details = {
+                    "document_id": document.id,
+                    "template_input_id": template_input.id,
+                    "template_output_id": template_output.id,
+                    "document_format": document_ext,
+                    "template_input_format": template_input_ext,
+                    "template_output_format": template_output_ext,
+                    "transformation_time_seconds": time.time() - start_time if 'start_time' in locals() else None,
+                    "job_id": job_id
+                }
+                
+                # Add chunking details if document was processed in chunks
+                if chunking_info:
+                    activity_details["chunking"] = True
+                    activity_details["chunks_count"] = chunking_info.get("chunks", 0)
+                    activity_description = f"Document transformed asynchronously in chunks: {document.title}"
+                else:
+                    activity_description = f"Document transformed asynchronously: {document.title}"
+                
                 log_activity(
                     db=db,
                     action="document_transformed_async",
                     user_id=user_id,
-                    description=f"Document transformed asynchronously: {document.title}",
-                    details={
-                        "document_id": document.id,
-                        "template_input_id": template_input.id,
-                        "template_output_id": template_output.id,
-                        "document_format": document_ext,
-                        "template_input_format": template_input_ext,
-                        "template_output_format": template_output_ext,
-                        "transformation_time_seconds": time.time() - start_time if 'start_time' in locals() else None,
-                        "job_id": job_id
-                    }
+                    description=activity_description,
+                    details=activity_details
                 )
                 
                 # Update job status

@@ -9,7 +9,7 @@ import os
 import logging
 import json
 import requests
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import time
 from dotenv import load_dotenv
 
@@ -80,8 +80,7 @@ class OpenAIService:
         if not self.api_key:
             raise ValueError("OpenAI API key not provided. Cannot perform transformation.")
         
-        # Content truncation strategy to handle large documents
-        # These values can be adjusted based on the model's capabilities
+        # Content chunking strategy to handle large documents
         # GPT-4o has about 128K token capacity
         
         # For repo document type (depositions), use a higher limit since we need the full text
@@ -92,16 +91,12 @@ class OpenAIService:
             max_document_chars = 50000   # Default limit for other document types
             max_template_chars = 10000   # Default template limit
         
-        # Truncate content if needed
+        # Check document and template lengths
         original_doc_length = len(document_content)
         original_input_template_length = len(template_input_content)
         original_output_template_length = len(template_output_content)
         
-        # Truncate if needed
-        if len(document_content) > max_document_chars:
-            document_content = document_content[:max_document_chars] + "\n...[content truncated]"
-            logger.warning(f"Document content truncated from {original_doc_length} to {max_document_chars} characters")
-        
+        # Truncate templates if needed
         if len(template_input_content) > max_template_chars:
             template_input_content = template_input_content[:max_template_chars] + "\n...[content truncated]"
             logger.warning(f"Input template truncated from {original_input_template_length} to {max_template_chars} characters")
@@ -115,6 +110,25 @@ class OpenAIService:
             document_format, template_input_format, template_output_format, document_type
         )
         
+        # Check if document needs chunking (larger than max_document_chars)
+        if len(document_content) > max_document_chars:
+            logger.info(f"Document size ({original_doc_length} chars) exceeds limit ({max_document_chars} chars). Using document chunking.")
+            return self._process_document_in_chunks(
+                document_content=document_content,
+                template_input_content=template_input_content,
+                template_output_content=template_output_content,
+                document_format=document_format,
+                template_input_format=template_input_format,
+                template_output_format=template_output_format,
+                document_title=document_title,
+                template_input_title=template_input_title,
+                template_output_title=template_output_title,
+                document_type=document_type,
+                system_prompt=system_prompt,
+                max_document_chars=max_document_chars
+            )
+        
+        # If document is small enough, process it normally without chunking
         # Create the user prompt with document content and templates
         user_prompt = self._create_user_prompt(
             document_content, template_input_content, template_output_content,
@@ -134,34 +148,6 @@ class OpenAIService:
             
             logger.info(f"OpenAI API call completed in {end_time - start_time:.2f} seconds")
             
-            # Check if content was truncated
-            was_truncated = (original_doc_length > max_document_chars or 
-                           original_input_template_length > max_template_chars or 
-                           original_output_template_length > max_template_chars)
-            
-            # Add metadata about truncation if needed
-            if was_truncated:
-                truncation_info = {
-                    "original_document_length": original_doc_length,
-                    "processed_document_length": len(document_content),
-                    "original_input_template_length": original_input_template_length,
-                    "processed_input_template_length": len(template_input_content),
-                    "original_output_template_length": original_output_template_length,
-                    "processed_output_template_length": len(template_output_content),
-                }
-                
-                # Add truncation info to response
-                response["truncation_info"] = truncation_info
-                
-                # Add truncation notice to the content for non-repo documents only
-                if document_type != "repo" and isinstance(response, dict) and "content" in response:
-                    truncation_note = (
-                        "\n\n[NOTE: Some content was truncated before processing due to token limits. "
-                        "The original document was " + str(original_doc_length) + " characters, and the processed version was " + 
-                        str(len(document_content)) + " characters.]"
-                    )
-                    response["content"] = response["content"] + truncation_note
-                
             # Return the parsed response (which should be a dict with file_type and content)
             return response
             
@@ -237,6 +223,183 @@ class OpenAIService:
                         raise ValueError(f"Document is too large to process even after truncation: {retry_error}")
             
             raise
+            
+    def _process_document_in_chunks(
+        self,
+        document_content: str,
+        template_input_content: str,
+        template_output_content: str,
+        document_format: str,
+        template_input_format: str,
+        template_output_format: str,
+        document_title: str,
+        template_input_title: str,
+        template_output_title: str,
+        document_type: str,
+        system_prompt: str,
+        max_document_chars: int
+    ) -> Dict[str, Any]:
+        """Process a document by splitting it into 5 equal chunks and concatenating results
+        
+        Args:
+            document_content: The full document content
+            template_input_content: The input template content
+            template_output_content: The output template content
+            document_format: The document format (extension)
+            template_input_format: The input template format
+            template_output_format: The output template format
+            document_title: The document title
+            template_input_title: The input template title
+            template_output_title: The output template title
+            document_type: The document type
+            system_prompt: The system prompt
+            max_document_chars: Maximum characters for each chunk
+            
+        Returns:
+            Dict[str, Any]: The combined transformation result
+        """
+        logger.info(f"Processing document in 5 chunks")
+        
+        # Split document into 5 equal chunks
+        doc_length = len(document_content)
+        chunk_size = doc_length // 5
+        
+        # Create 5 chunks
+        chunks = []
+        for i in range(5):
+            start = i * chunk_size
+            # For the last chunk, include any remaining characters
+            end = (i + 1) * chunk_size if i < 4 else doc_length
+            chunk = document_content[start:end]
+            chunks.append(chunk)
+            logger.info(f"Chunk {i+1}: {len(chunk)} characters")
+        
+        # Create specific system prompt for chunked processing
+        chunk_system_prompt = system_prompt + "\n\nIMPORTANT: You are processing part of a document that has been split into chunks. Focus only on transforming this chunk according to the template formats."
+        
+        # Process each chunk
+        chunk_results = []
+        for i, chunk in enumerate(chunks):
+            logger.info(f"Processing chunk {i+1}/5")
+            
+            # Create user prompt for this chunk
+            chunk_user_prompt = self._create_user_prompt(
+                chunk, template_input_content, template_output_content,
+                f"{document_title} (Part {i+1}/5)", template_input_title, template_output_title
+            )
+            
+            # Process the chunk
+            try:
+                start_time = time.time()
+                result = self._call_openai_api(chunk_system_prompt, chunk_user_prompt)
+                duration = time.time() - start_time
+                logger.info(f"Chunk {i+1}/5 processed in {duration:.2f} seconds")
+                chunk_results.append(result)
+            except Exception as e:
+                logger.error(f"Error processing chunk {i+1}/5: {e}")
+                # Add error placeholder for this chunk
+                chunk_results.append({
+                    "file_type": template_output_format.lstrip("."),
+                    "content": f"[Error processing part {i+1}/5: {str(e)}]",
+                    "error": str(e)
+                })
+        
+        # Combine results
+        combined_result = self._combine_chunk_results(chunk_results, document_type, template_output_format)
+        
+        # Add metadata about chunking
+        combined_result["chunking_info"] = {
+            "original_document_length": doc_length,
+            "chunks": 5,
+            "chunk_sizes": [len(chunk) for chunk in chunks],
+            "chunks_processed": len(chunk_results),
+            "chunks_with_errors": sum(1 for r in chunk_results if "error" in r)
+        }
+        
+        return combined_result
+    
+    def _combine_chunk_results(
+        self, 
+        chunk_results: List[Dict[str, Any]], 
+        document_type: str,
+        template_output_format: str
+    ) -> Dict[str, Any]:
+        """Combine results from multiple chunks into a single result
+        
+        Args:
+            chunk_results: List of results from individual chunks
+            document_type: The document type
+            template_output_format: The output template format
+            
+        Returns:
+            Dict[str, Any]: The combined result
+        """
+        logger.info(f"Combining results from {len(chunk_results)} chunks")
+        
+        # Initialize with metadata from the first chunk
+        combined_result = {
+            "file_type": chunk_results[0].get("file_type", template_output_format.lstrip(".")),
+            "content": "",
+        }
+        
+        # Handle different output formats
+        file_type = combined_result["file_type"].lower()
+        
+        # Special handling for CSV format - keep header from first chunk, skip headers in remaining chunks
+        if file_type == "csv" and document_type == "repo":
+            # For repo type (deposition), we need special handling for the CSV
+            # First chunk contains metadata rows that need to be preserved
+            lines = []
+            header_line = None
+            
+            # Process first chunk to extract headers
+            first_chunk_lines = chunk_results[0].get("content", "").splitlines()
+            if len(first_chunk_lines) >= 1:
+                header_line = first_chunk_lines[0]  # CSV header row
+                lines.extend(first_chunk_lines)  # Include all lines from first chunk
+            
+            # Process remaining chunks, skipping header rows if present
+            for i, result in enumerate(chunk_results[1:], 1):
+                chunk_lines = result.get("content", "").splitlines()
+                if len(chunk_lines) >= 1 and header_line and chunk_lines[0] == header_line:
+                    # Skip header row in subsequent chunks
+                    chunk_lines = chunk_lines[1:]
+                lines.extend(chunk_lines)
+            
+            combined_result["content"] = "\n".join(lines)
+            
+        elif file_type == "csv":
+            # For regular CSV, similar approach but simpler
+            lines = []
+            header_line = None
+            
+            # Process first chunk to extract headers
+            first_chunk_lines = chunk_results[0].get("content", "").splitlines()
+            if len(first_chunk_lines) >= 1:
+                header_line = first_chunk_lines[0]  # CSV header row
+                lines.extend(first_chunk_lines)  # Include all lines from first chunk
+            
+            # Process remaining chunks, skipping header rows if present
+            for i, result in enumerate(chunk_results[1:], 1):
+                chunk_lines = result.get("content", "").splitlines()
+                if len(chunk_lines) >= 1 and header_line and chunk_lines[0] == header_line:
+                    # Skip header row in subsequent chunks
+                    chunk_lines = chunk_lines[1:]
+                lines.extend(chunk_lines)
+            
+            combined_result["content"] = "\n".join(lines)
+            
+        else:
+            # For other formats, simple concatenation with section markers
+            sections = []
+            for i, result in enumerate(chunk_results):
+                content = result.get("content", "")
+                sections.append(content)
+            
+            combined_result["content"] = "\n\n".join(sections)
+        
+        logger.info(f"Combined result generated with {len(combined_result['content'])} characters")
+        return combined_result
     
     def _create_system_prompt(
         self, document_format: str, template_input_format: str, template_output_format: str, document_type: str = "other"
